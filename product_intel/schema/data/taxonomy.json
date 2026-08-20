@@ -1,0 +1,82 @@
+{
+  "_comment": "Product category taxonomy for industrial B2B commerce. 'etim' / 'unspsc' hold the corresponding external classification codes so exports can carry standards-compliant class references. 'keywords' drive the deterministic first-pass classifier; the LLM classifier is only consulted when keyword scoring is ambiguous.",
+  "version": "1.0.0",
+  "categories": [
+    {
+      "id": "electrical.circuit_breaker",
+      "name": "Circuit Breaker",
+      "vertical": "electrical",
+      "parent": "electrical",
+      "etim": "EC000109",
+      "unspsc": "39121600",
+      "attribute_set": "electrical_circuit_breaker",
+      "keywords": ["circuit breaker", "mccb", "mcb", "miniature circuit breaker", "molded case", "breaker", "interrupting rating", "trip curve"]
+    },
+    {
+      "id": "electrical.contactor",
+      "name": "Contactor",
+      "vertical": "electrical",
+      "parent": "electrical",
+      "etim": "EC000029",
+      "unspsc": "39121004",
+      "attribute_set": "electrical_contactor",
+      "keywords": ["contactor", "coil voltage", "auxiliary contact", "motor starter", "ac-3"]
+    },
+    {
+      "id": "plumbing.ball_valve",
+      "name": "Ball Valve",
+      "vertical": "plumbing",
+      "parent": "plumbing",
+      "etim": "EC002516",
+      "unspsc": "40141607",
+      "attribute_set": "plumbing_ball_valve",
+      "keywords": ["ball valve", "valve", "full port", "standard port", "wog", "npt", "body material", "seat material"]
+    },
+    {
+      "id": "plumbing.pipe_fitting",
+      "name": "Pipe Fitting",
+      "vertical": "plumbing",
+      "parent": "plumbing",
+      "etim": "EC002424",
+      "unspsc": "40141600",
+      "attribute_set": "plumbing_pipe_fitting",
+      "keywords": ["elbow", "tee", "coupling", "reducer", "nipple", "pipe fitting", "socket weld", "threaded fitting"]
+    },
+    {
+      "id": "hvac.centrifugal_blower",
+      "name": "Centrifugal Blower",
+      "vertical": "hvac",
+      "parent": "hvac",
+      "etim": "EC001355",
+      "unspsc": "40101701",
+      "attribute_set": "hvac_blower",
+      "keywords": ["blower", "centrifugal fan", "cfm", "static pressure", "impeller", "air handler", "squirrel cage"]
+    },
+    {
+      "id": "hvac.thermostat",
+      "name": "Thermostat",
+      "vertical": "hvac",
+      "parent": "hvac",
+      "etim": "EC000414",
+      "unspsc": "41112209",
+      "attribute_set": "hvac_thermostat",
+      "keywords": ["thermostat", "setpoint", "heat pump", "stages", "hvac control", "temperature control"]
+    },
+    {
+      "id": "industrial.generic",
+      "name": "Generic Industrial Product",
+      "vertical": "industrial",
+      "parent": "industrial",
+      "etim": null,
+      "unspsc": "31000000",
+      "attribute_set": "industrial_generic",
+      "keywords": []
+    }
+  ],
+  "verticals": {
+    "electrical": { "name": "Electrical", "unspsc": "39000000" },
+    "plumbing": { "name": "Plumbing / PVF", "unspsc": "40140000" },
+    "hvac": { "name": "HVAC", "unspsc": "40100000" },
+    "industrial": { "name": "General Industrial", "unspsc": "31000000" }
+  }
+}

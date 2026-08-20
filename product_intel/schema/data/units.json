@@ -1,0 +1,112 @@
+{
+  "_comment": "Unit families for normalization. Each family declares a canonical unit and conversion factors to it. 'aliases' map surface forms found in documents to the canonical unit code.",
+  "families": {
+    "length": {
+      "canonical": "mm",
+      "units": {
+        "mm": { "factor": 1.0, "aliases": ["mm", "millimeter", "millimetre", "millimeters", "millimetres"] },
+        "cm": { "factor": 10.0, "aliases": ["cm", "centimeter", "centimetre", "centimeters"] },
+        "m": { "factor": 1000.0, "aliases": ["m", "meter", "metre", "meters", "metres"] },
+        "in": { "factor": 25.4, "aliases": ["in", "inch", "inches", "\"", "''"] },
+        "ft": { "factor": 304.8, "aliases": ["ft", "foot", "feet", "'"] }
+      }
+    },
+    "mass": {
+      "canonical": "kg",
+      "units": {
+        "kg": { "factor": 1.0, "aliases": ["kg", "kilogram", "kilograms", "kgs"] },
+        "g": { "factor": 0.001, "aliases": ["g", "gram", "grams"] },
+        "lb": { "factor": 0.45359237, "aliases": ["lb", "lbs", "pound", "pounds"] },
+        "oz": { "factor": 0.0283495231, "aliases": ["oz", "ounce", "ounces"] }
+      }
+    },
+    "pressure": {
+      "canonical": "bar",
+      "units": {
+        "bar": { "factor": 1.0, "aliases": ["bar", "bars"] },
+        "psi": { "factor": 0.0689475729, "aliases": ["psi", "psig", "lbf/in2", "lb/in2"] },
+        "kPa": { "factor": 0.01, "aliases": ["kpa", "kilopascal", "kilopascals"] },
+        "MPa": { "factor": 10.0, "aliases": ["mpa", "megapascal", "megapascals"] },
+        "Pa": { "factor": 1e-05, "aliases": ["pa", "pascal", "pascals"] },
+        "inH2O": { "factor": 0.00249089, "aliases": ["inh2o", "in. w.g.", "in wg", "in. wg", "inches water", "inches w.g.", "in h2o", "iwg", "in. water"] },
+        "mmH2O": { "factor": 9.80665e-05, "aliases": ["mmh2o", "mm w.g.", "mm wg", "mm water"] }
+      }
+    },
+    "temperature": {
+      "canonical": "degC",
+      "units": {
+        "degC": { "factor": 1.0, "aliases": ["c", "°c", "degc", "deg c", "celsius", "centigrade"] },
+        "degF": { "factor": 1.0, "offset_style": "fahrenheit", "aliases": ["f", "°f", "degf", "deg f", "fahrenheit"] },
+        "K": { "factor": 1.0, "offset_style": "kelvin", "aliases": ["k", "kelvin"] }
+      }
+    },
+    "voltage": {
+      "canonical": "V",
+      "units": {
+        "V": { "factor": 1.0, "aliases": ["v", "volt", "volts", "vac", "vdc", "v ac", "v dc"] },
+        "kV": { "factor": 1000.0, "aliases": ["kv", "kilovolt", "kilovolts"] },
+        "mV": { "factor": 0.001, "aliases": ["mv", "millivolt", "millivolts"] }
+      }
+    },
+    "current": {
+      "canonical": "A",
+      "units": {
+        "A": { "factor": 1.0, "aliases": ["a", "amp", "amps", "ampere", "amperes"] },
+        "kA": { "factor": 1000.0, "aliases": ["ka", "kiloamp", "kiloampere", "kiloamperes"] },
+        "mA": { "factor": 0.001, "aliases": ["ma", "milliamp", "milliampere"] }
+      }
+    },
+    "power": {
+      "canonical": "W",
+      "units": {
+        "W": { "factor": 1.0, "aliases": ["w", "watt", "watts"] },
+        "kW": { "factor": 1000.0, "aliases": ["kw", "kilowatt", "kilowatts"] },
+        "hp": { "factor": 745.699872, "aliases": ["hp", "horsepower"] },
+        "BTU/h": { "factor": 0.29307107, "aliases": ["btu/h", "btu/hr", "btuh", "btu per hour"] }
+      }
+    },
+    "frequency": {
+      "canonical": "Hz",
+      "units": {
+        "Hz": { "factor": 1.0, "aliases": ["hz", "hertz", "cps"] },
+        "kHz": { "factor": 1000.0, "aliases": ["khz", "kilohertz"] }
+      }
+    },
+    "flow": {
+      "canonical": "m3/h",
+      "units": {
+        "m3/h": { "factor": 1.0, "aliases": ["m3/h", "m³/h", "cmh", "cubic meters per hour"] },
+        "L/min": { "factor": 0.06, "aliases": ["l/min", "lpm", "liters per minute", "litres per minute"] },
+        "GPM": { "factor": 0.2271247, "aliases": ["gpm", "gal/min", "gallons per minute"] },
+        "CFM": { "factor": 1.69901082, "aliases": ["cfm", "ft3/min", "cubic feet per minute"] }
+      }
+    },
+    "torque": {
+      "canonical": "Nm",
+      "units": {
+        "Nm": { "factor": 1.0, "aliases": ["nm", "n-m", "n·m", "newton meter", "newton metre"] },
+        "in-lb": { "factor": 0.112984829, "aliases": ["in-lb", "in.lb", "inch pound", "inlb"] },
+        "ft-lb": { "factor": 1.35581795, "aliases": ["ft-lb", "ft.lb", "foot pound", "ftlb"] }
+      }
+    },
+    "speed_rot": {
+      "canonical": "rpm",
+      "units": {
+        "rpm": { "factor": 1.0, "aliases": ["rpm", "r/min", "revolutions per minute"] }
+      }
+    },
+    "sound": {
+      "canonical": "dBA",
+      "units": {
+        "dBA": { "factor": 1.0, "aliases": ["dba", "db(a)", "db a", "decibel"] }
+      }
+    }
+  },
+  "scale_prefixes": {
+    "thousand": 1000.0,
+    "thousands": 1000.0,
+    "k": 1000.0,
+    "million": 1000000.0,
+    "millions": 1000000.0
+  }
+}

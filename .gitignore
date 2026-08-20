@@ -1,0 +1,13 @@
+# Derived artifacts — regenerate with `product-intel build`
+Catalog/
+Sources/
+
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.DS_Store
+
+# Secrets — never commit
+.env

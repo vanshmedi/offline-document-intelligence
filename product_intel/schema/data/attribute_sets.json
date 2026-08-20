@@ -1,0 +1,172 @@
+{
+  "_comment": "Attribute dictionary. Every category's attribute_set is merged with '_common'. This file is the contract that makes extraction schema-directed rather than open-ended: the extractor is told exactly which attributes to look for, what datatype and unit each must be, and what values are legal. 'aliases' drive the deterministic (no-LLM) first pass. 'required_for' declares channel readiness: core = PIM minimum, ecommerce = publishable on a webstore, enhanced = drives conversion.",
+  "version": "1.0.0",
+  "sets": {
+    "_common": {
+      "attributes": [
+        { "code": "manufacturer", "name": "Manufacturer", "datatype": "string", "required_for": ["core"], "identity": true, "aliases": ["manufacturer", "brand", "made by", "supplier", "vendor"] },
+        { "code": "mpn", "name": "Manufacturer Part Number", "datatype": "string", "required_for": ["core"], "identity": true, "aliases": ["mpn", "part number", "part no", "part #", "catalog number", "catalogue number", "cat no", "model", "model number", "order number", "order code", "item number", "sku"] },
+        { "code": "gtin", "name": "GTIN / UPC", "datatype": "string", "required_for": ["enhanced"], "pattern": "^[0-9]{8,14}$", "aliases": ["gtin", "upc", "ean", "barcode", "global trade item number"] },
+        { "code": "product_name", "name": "Product Name", "datatype": "string", "required_for": ["core"], "aliases": ["product name", "product title", "description", "title", "designation"] },
+        { "code": "series", "name": "Product Series", "datatype": "string", "required_for": ["enhanced"], "aliases": ["series", "family", "product family", "product line", "range"] },
+        { "code": "short_description", "name": "Short Description", "datatype": "text", "required_for": ["ecommerce"], "max_length": 300, "generated": true },
+        { "code": "long_description", "name": "Long Description", "datatype": "text", "required_for": ["ecommerce"], "max_length": 3000, "generated": true },
+        { "code": "feature_bullets", "name": "Feature Bullets", "datatype": "string", "cardinality": "multi", "required_for": ["ecommerce"], "generated": true },
+        { "code": "seo_title", "name": "SEO Title", "datatype": "string", "required_for": ["enhanced"], "max_length": 70, "generated": true },
+        { "code": "seo_description", "name": "SEO Meta Description", "datatype": "string", "required_for": ["enhanced"], "max_length": 160, "generated": true },
+        { "code": "search_keywords", "name": "Search Keywords", "datatype": "string", "cardinality": "multi", "required_for": ["enhanced"], "generated": true },
+        { "code": "weight_kg", "name": "Weight", "datatype": "number", "unit_family": "mass", "canonical_unit": "kg", "min": 0.001, "max": 5000, "required_for": ["ecommerce"], "aliases": ["weight", "net weight", "shipping weight", "mass", "wt"] },
+        { "code": "country_of_origin", "name": "Country of Origin", "datatype": "string", "required_for": ["ecommerce"], "aliases": ["country of origin", "origin", "made in", "coo"] },
+        { "code": "warranty_months", "name": "Warranty", "datatype": "number", "unit_family": null, "canonical_unit": "months", "min": 0, "max": 600, "required_for": ["enhanced"], "aliases": ["warranty", "warranty period", "guarantee"] },
+        { "code": "certifications", "name": "Certifications & Approvals", "datatype": "string", "cardinality": "multi", "required_for": ["ecommerce"], "aliases": ["certifications", "approvals", "listings", "compliance", "certified to", "conforms to", "standards"] },
+        { "code": "uom", "name": "Unit of Measure", "datatype": "enum", "allowed_values": ["EA", "BX", "CS", "PK", "FT", "RL"], "required_for": ["ecommerce"], "default": "EA", "aliases": ["uom", "unit of measure", "sold as", "sold by"] },
+        { "code": "package_quantity", "name": "Package Quantity", "datatype": "number", "min": 1, "max": 100000, "required_for": ["ecommerce"], "aliases": ["package quantity", "pack qty", "qty per package", "standard pack", "carton qty"] },
+        { "code": "list_price_usd", "name": "List Price (USD)", "datatype": "number", "canonical_unit": "USD", "min": 0, "max": 1000000, "required_for": ["ecommerce"], "aliases": ["list price", "price", "msrp", "unit price"] }
+      ]
+    },
+
+    "electrical_circuit_breaker": {
+      "attributes": [
+        { "code": "poles", "name": "Number of Poles", "datatype": "enum", "allowed_values": ["1", "2", "3", "4"], "required_for": ["core"], "variant_defining": true, "etim": "EF000021", "aliases": ["poles", "no. of poles", "number of poles", "pole", "p"] },
+        { "code": "rated_current_a", "name": "Rated Current (In)", "datatype": "number", "unit_family": "current", "canonical_unit": "A", "min": 0.5, "max": 6300, "required_for": ["core"], "variant_defining": true, "aliases": ["rated current", "current rating", "ampere rating", "amperage", "in", "amps", "rated current in"] },
+        { "code": "rated_voltage_v", "name": "Rated Operational Voltage (Ue)", "datatype": "number", "unit_family": "voltage", "canonical_unit": "V", "min": 12, "max": 1000, "required_for": ["core"], "aliases": ["rated voltage", "operational voltage", "voltage rating", "ue", "rated operational voltage"] },
+        { "code": "interrupting_rating_ka", "name": "Interrupting Rating (Icu)", "datatype": "number", "unit_family": "current", "canonical_unit": "kA", "min": 1, "max": 200, "required_for": ["ecommerce"], "aliases": ["interrupting rating", "breaking capacity", "icu", "ics", "short circuit rating", "aic", "kaic"] },
+        { "code": "trip_curve", "name": "Trip Curve", "datatype": "enum", "allowed_values": ["B", "C", "D", "K", "Z"], "required_for": ["ecommerce"], "variant_defining": true, "aliases": ["trip curve", "tripping characteristic", "curve", "characteristic"] },
+        { "code": "frame_size", "name": "Frame Size", "datatype": "string", "required_for": ["enhanced"], "aliases": ["frame size", "frame", "frame type"] },
+        { "code": "mounting_type", "name": "Mounting Type", "datatype": "enum", "allowed_values": ["DIN Rail", "Panel Mount", "Plug-In", "Bolt-On", "Draw-Out"], "required_for": ["ecommerce"], "aliases": ["mounting", "mounting type", "mounting method", "installation"] },
+        { "code": "enclosure_rating", "name": "Enclosure / Ingress Rating", "datatype": "string", "required_for": ["enhanced"], "aliases": ["enclosure rating", "ingress protection", "ip rating", "nema rating", "protection degree", "degree of protection"] },
+        { "code": "terminal_type", "name": "Terminal Type", "datatype": "enum", "allowed_values": ["Screw", "Box Lug", "Ring Tongue", "Spring Clamp", "Compression"], "required_for": ["enhanced"], "aliases": ["terminal type", "terminals", "connection type", "wire termination"] },
+        { "code": "operating_temp_min_c", "name": "Min Operating Temperature", "datatype": "number", "unit_family": "temperature", "canonical_unit": "degC", "min": -60, "max": 50, "required_for": ["enhanced"], "aliases": ["min operating temperature", "minimum ambient", "operating temperature", "ambient temperature", "temperature range"] },
+        { "code": "operating_temp_max_c", "name": "Max Operating Temperature", "datatype": "number", "unit_family": "temperature", "canonical_unit": "degC", "min": 0, "max": 150, "required_for": ["enhanced"], "aliases": ["max operating temperature", "maximum ambient", "operating temperature", "ambient temperature", "temperature range"] },
+        { "code": "width_mm", "name": "Width", "datatype": "number", "unit_family": "length", "canonical_unit": "mm", "min": 1, "max": 2000, "required_for": ["ecommerce"], "aliases": ["width", "w", "module width"] },
+        { "code": "height_mm", "name": "Height", "datatype": "number", "unit_family": "length", "canonical_unit": "mm", "min": 1, "max": 3000, "required_for": ["ecommerce"], "aliases": ["height", "h"] },
+        { "code": "depth_mm", "name": "Depth", "datatype": "number", "unit_family": "length", "canonical_unit": "mm", "min": 1, "max": 2000, "required_for": ["ecommerce"], "aliases": ["depth", "d", "projection"] }
+      ],
+      "rules": [
+        { "id": "cb_icu_gt_in", "type": "cross_attribute", "expression": "interrupting_rating_ka * 1000 > rated_current_a", "message": "Interrupting rating must exceed rated current." },
+        { "id": "cb_temp_order", "type": "cross_attribute", "expression": "operating_temp_max_c > operating_temp_min_c", "message": "Max operating temperature must be greater than min." },
+        { "id": "cb_din_width", "type": "implication", "if": "mounting_type == 'DIN Rail'", "then_present": ["width_mm"], "message": "DIN rail breakers must declare module width." }
+      ]
+    },
+
+    "electrical_contactor": {
+      "attributes": [
+        { "code": "poles", "name": "Number of Poles", "datatype": "enum", "allowed_values": ["1", "2", "3", "4"], "required_for": ["core"], "variant_defining": true, "aliases": ["poles", "no. of poles", "number of poles", "main poles"] },
+        { "code": "coil_voltage_v", "name": "Coil Voltage", "datatype": "number", "unit_family": "voltage", "canonical_unit": "V", "min": 12, "max": 690, "required_for": ["core"], "variant_defining": true, "aliases": ["coil voltage", "control voltage", "coil", "uc"] },
+        { "code": "ac3_rating_a", "name": "AC-3 Rating", "datatype": "number", "unit_family": "current", "canonical_unit": "A", "min": 1, "max": 1000, "required_for": ["core"], "variant_defining": true, "aliases": ["ac-3", "ac3", "ac-3 rating", "ac-3 current", "motor rating"] },
+        { "code": "ac1_rating_a", "name": "AC-1 Rating", "datatype": "number", "unit_family": "current", "canonical_unit": "A", "min": 1, "max": 2000, "required_for": ["ecommerce"], "aliases": ["ac-1", "ac1", "ac-1 rating", "resistive rating", "thermal current"] },
+        { "code": "rated_voltage_v", "name": "Rated Operational Voltage", "datatype": "number", "unit_family": "voltage", "canonical_unit": "V", "min": 12, "max": 1000, "required_for": ["core"], "aliases": ["rated voltage", "operational voltage", "ue", "main circuit voltage"] },
+        { "code": "auxiliary_contacts", "name": "Auxiliary Contacts", "datatype": "string", "required_for": ["ecommerce"], "aliases": ["auxiliary contacts", "aux contacts", "auxiliary contact configuration", "no/nc"] },
+        { "code": "motor_power_kw", "name": "Rated Motor Power (400V)", "datatype": "number", "unit_family": "power", "canonical_unit": "kW", "min": 0.01, "max": 1000, "required_for": ["ecommerce"], "aliases": ["motor power", "rated power", "kw rating", "power rating"] },
+        { "code": "mounting_type", "name": "Mounting Type", "datatype": "enum", "allowed_values": ["DIN Rail", "Panel Mount", "Plug-In", "Bolt-On", "Draw-Out"], "required_for": ["ecommerce"], "aliases": ["mounting", "mounting type", "installation"] },
+        { "code": "coil_frequency_hz", "name": "Coil Frequency", "datatype": "number", "unit_family": "frequency", "canonical_unit": "Hz", "min": 0, "max": 400, "required_for": ["enhanced"], "aliases": ["coil frequency", "frequency", "supply frequency", "hz"] },
+        { "code": "operating_temp_min_c", "name": "Min Operating Temperature", "datatype": "number", "unit_family": "temperature", "canonical_unit": "degC", "min": -60, "max": 50, "required_for": ["enhanced"], "aliases": ["min operating temperature", "minimum ambient", "operating temperature", "temperature range"] },
+        { "code": "operating_temp_max_c", "name": "Max Operating Temperature", "datatype": "number", "unit_family": "temperature", "canonical_unit": "degC", "min": 0, "max": 150, "required_for": ["enhanced"], "aliases": ["max operating temperature", "maximum ambient", "operating temperature", "temperature range"] },
+        { "code": "width_mm", "name": "Width", "datatype": "number", "unit_family": "length", "canonical_unit": "mm", "min": 1, "max": 2000, "required_for": ["ecommerce"], "aliases": ["width", "w"] },
+        { "code": "height_mm", "name": "Height", "datatype": "number", "unit_family": "length", "canonical_unit": "mm", "min": 1, "max": 3000, "required_for": ["ecommerce"], "aliases": ["height", "h"] },
+        { "code": "depth_mm", "name": "Depth", "datatype": "number", "unit_family": "length", "canonical_unit": "mm", "min": 1, "max": 2000, "required_for": ["ecommerce"], "aliases": ["depth", "d"] }
+      ],
+      "rules": [
+        { "id": "ct_ac1_ge_ac3", "type": "cross_attribute", "expression": "ac1_rating_a >= ac3_rating_a", "message": "AC-1 (resistive) rating is normally greater than or equal to the AC-3 (motor) rating." },
+        { "id": "ct_temp_order", "type": "cross_attribute", "expression": "operating_temp_max_c > operating_temp_min_c", "message": "Max operating temperature must be greater than min." }
+      ]
+    },
+
+    "plumbing_ball_valve": {
+      "attributes": [
+        { "code": "nominal_size_mm", "name": "Nominal Size", "datatype": "number", "unit_family": "length", "canonical_unit": "mm", "min": 3, "max": 1200, "required_for": ["core"], "variant_defining": true, "aliases": ["nominal size", "size", "nps", "dn", "nominal diameter", "pipe size", "valve size"] },
+        { "code": "end_connection", "name": "End Connection", "datatype": "enum", "allowed_values": ["NPT Threaded", "BSP Threaded", "Socket Weld", "Butt Weld", "Flanged", "Press", "Solder", "Compression", "Grooved"], "required_for": ["core"], "variant_defining": true, "aliases": ["end connection", "connection", "connection type", "ends", "end type", "thread type"] },
+        { "code": "body_material", "name": "Body Material", "datatype": "enum", "allowed_values": ["Brass", "Bronze", "Carbon Steel", "Stainless Steel 304", "Stainless Steel 316", "Ductile Iron", "PVC", "CPVC", "Forged Steel"], "required_for": ["core"], "variant_defining": true, "aliases": ["body material", "material", "body", "valve body", "construction material"] },
+        { "code": "seat_material", "name": "Seat Material", "datatype": "enum", "allowed_values": ["PTFE", "RPTFE", "PEEK", "Nylon", "Devlon", "TFM"], "required_for": ["ecommerce"], "aliases": ["seat material", "seat", "seats", "seal material"] },
+        { "code": "port_type", "name": "Port Type", "datatype": "enum", "allowed_values": ["Full Port", "Standard Port", "Reduced Port", "V-Port"], "required_for": ["ecommerce"], "aliases": ["port", "port type", "bore", "bore type", "porting"] },
+        { "code": "pressure_rating_bar", "name": "Pressure Rating", "datatype": "number", "unit_family": "pressure", "canonical_unit": "bar", "min": 0.5, "max": 700, "required_for": ["core"], "aliases": ["pressure rating", "working pressure", "wog", "max pressure", "rated pressure", "cwp", "psi"] },
+        { "code": "operating_temp_min_c", "name": "Min Operating Temperature", "datatype": "number", "unit_family": "temperature", "canonical_unit": "degC", "min": -200, "max": 50, "required_for": ["enhanced"], "aliases": ["min operating temperature", "minimum temperature", "temperature range", "operating temperature"] },
+        { "code": "operating_temp_max_c", "name": "Max Operating Temperature", "datatype": "number", "unit_family": "temperature", "canonical_unit": "degC", "min": 0, "max": 800, "required_for": ["enhanced"], "aliases": ["max operating temperature", "maximum temperature", "temperature range", "operating temperature"] },
+        { "code": "handle_type", "name": "Handle Type", "datatype": "enum", "allowed_values": ["Lever", "Tee Handle", "Locking Lever", "Butterfly", "Oval", "Gear Operated"], "required_for": ["ecommerce"], "aliases": ["handle", "handle type", "operator", "lever type"] },
+        { "code": "actuation", "name": "Actuation", "datatype": "enum", "allowed_values": ["Manual", "Pneumatic", "Electric", "Hydraulic"], "required_for": ["ecommerce"], "default": "Manual", "aliases": ["actuation", "actuator", "operation", "drive"] },
+        { "code": "number_of_pieces", "name": "Body Construction", "datatype": "enum", "allowed_values": ["1-Piece", "2-Piece", "3-Piece"], "required_for": ["enhanced"], "aliases": ["piece", "body construction", "pieces", "construction"] },
+        { "code": "flow_coefficient_cv", "name": "Flow Coefficient (Cv)", "datatype": "number", "min": 0.01, "max": 100000, "required_for": ["enhanced"], "aliases": ["cv", "flow coefficient", "kv", "flow capacity"] },
+        { "code": "length_mm", "name": "Overall Length", "datatype": "number", "unit_family": "length", "canonical_unit": "mm", "min": 5, "max": 5000, "required_for": ["ecommerce"], "aliases": ["length", "overall length", "face to face", "l"] }
+      ],
+      "rules": [
+        { "id": "bv_temp_order", "type": "cross_attribute", "expression": "operating_temp_max_c > operating_temp_min_c", "message": "Max operating temperature must be greater than min." },
+        { "id": "bv_ptfe_temp", "type": "implication", "if": "seat_material == 'PTFE'", "then_max": { "operating_temp_max_c": 232 }, "message": "PTFE seats are not rated above 232 degC (450 degF)." },
+        { "id": "bv_potable_cert", "type": "implication", "if": "body_material == 'Brass'", "then_present": ["certifications"], "message": "Brass potable-water valves must declare lead-free / NSF certification." }
+      ]
+    },
+
+    "plumbing_pipe_fitting": {
+      "attributes": [
+        { "code": "fitting_type", "name": "Fitting Type", "datatype": "enum", "allowed_values": ["90 Elbow", "45 Elbow", "Tee", "Cross", "Coupling", "Reducer", "Union", "Cap", "Plug", "Nipple", "Bushing", "Flange"], "required_for": ["core"], "variant_defining": true, "aliases": ["fitting type", "type", "style", "configuration"] },
+        { "code": "nominal_size_mm", "name": "Nominal Size", "datatype": "number", "unit_family": "length", "canonical_unit": "mm", "min": 3, "max": 1200, "required_for": ["core"], "variant_defining": true, "aliases": ["nominal size", "size", "nps", "dn", "pipe size", "nominal diameter"] },
+        { "code": "end_connection", "name": "End Connection", "datatype": "enum", "allowed_values": ["NPT Threaded", "BSP Threaded", "Socket Weld", "Butt Weld", "Flanged", "Press", "Solder", "Compression", "Grooved"], "required_for": ["core"], "variant_defining": true, "aliases": ["end connection", "connection", "ends", "end type", "thread"] },
+        { "code": "body_material", "name": "Material", "datatype": "enum", "allowed_values": ["Brass", "Bronze", "Carbon Steel", "Stainless Steel 304", "Stainless Steel 316", "Malleable Iron", "Ductile Iron", "PVC", "CPVC", "Copper"], "required_for": ["core"], "variant_defining": true, "aliases": ["material", "body material", "construction", "alloy"] },
+        { "code": "schedule", "name": "Schedule", "datatype": "enum", "allowed_values": ["SCH 5", "SCH 10", "SCH 40", "SCH 80", "SCH 160", "XS", "XXS"], "required_for": ["ecommerce"], "aliases": ["schedule", "sch", "wall thickness class", "pipe schedule"] },
+        { "code": "pressure_rating_bar", "name": "Pressure Rating", "datatype": "number", "unit_family": "pressure", "canonical_unit": "bar", "min": 0.5, "max": 700, "required_for": ["core"], "aliases": ["pressure rating", "working pressure", "wog", "rated pressure", "class", "psi"] },
+        { "code": "operating_temp_max_c", "name": "Max Operating Temperature", "datatype": "number", "unit_family": "temperature", "canonical_unit": "degC", "min": 0, "max": 800, "required_for": ["enhanced"], "aliases": ["max operating temperature", "maximum temperature", "temperature rating"] },
+        { "code": "length_mm", "name": "Overall Length", "datatype": "number", "unit_family": "length", "canonical_unit": "mm", "min": 3, "max": 6000, "required_for": ["ecommerce"], "aliases": ["length", "overall length", "l", "center to end"] },
+        { "code": "surface_finish", "name": "Surface Finish", "datatype": "enum", "allowed_values": ["Galvanized", "Black", "Chrome Plated", "Nickel Plated", "Mill Finish", "Passivated"], "required_for": ["enhanced"], "aliases": ["finish", "surface finish", "coating", "plating"] }
+      ],
+      "rules": [
+        { "id": "pf_sch80_pressure", "type": "implication", "if": "schedule == 'SCH 80'", "then_min": { "pressure_rating_bar": 10 }, "message": "SCH 80 fittings should carry a pressure rating of at least 10 bar." }
+      ]
+    },
+
+    "hvac_blower": {
+      "attributes": [
+        { "code": "airflow_m3h", "name": "Airflow", "datatype": "number", "unit_family": "flow", "canonical_unit": "m3/h", "min": 1, "max": 500000, "required_for": ["core"], "variant_defining": true, "aliases": ["airflow", "air flow", "cfm", "flow rate", "capacity", "air volume", "rated airflow"] },
+        { "code": "static_pressure_bar", "name": "Static Pressure", "datatype": "number", "unit_family": "pressure", "canonical_unit": "bar", "min": 1e-05, "max": 1, "required_for": ["ecommerce"], "aliases": ["static pressure", "esp", "external static pressure", "pressure", "in. w.g.", "inches water"] },
+        { "code": "motor_power_w", "name": "Motor Power", "datatype": "number", "unit_family": "power", "canonical_unit": "W", "min": 1, "max": 500000, "required_for": ["core"], "variant_defining": true, "aliases": ["motor power", "power", "hp", "motor rating", "input power", "watts"] },
+        { "code": "voltage_v", "name": "Supply Voltage", "datatype": "number", "unit_family": "voltage", "canonical_unit": "V", "min": 12, "max": 1000, "required_for": ["core"], "variant_defining": true, "aliases": ["voltage", "supply voltage", "rated voltage", "input voltage", "vac"] },
+        { "code": "phase", "name": "Phase", "datatype": "enum", "allowed_values": ["1", "3"], "required_for": ["core"], "variant_defining": true, "aliases": ["phase", "ph", "number of phases", "supply phase"] },
+        { "code": "frequency_hz", "name": "Frequency", "datatype": "number", "unit_family": "frequency", "canonical_unit": "Hz", "min": 40, "max": 400, "required_for": ["ecommerce"], "aliases": ["frequency", "hz", "supply frequency"] },
+        { "code": "speed_rpm", "name": "Rated Speed", "datatype": "number", "unit_family": "speed_rot", "canonical_unit": "rpm", "min": 100, "max": 30000, "required_for": ["ecommerce"], "aliases": ["speed", "rpm", "rated speed", "rotational speed", "fan speed"] },
+        { "code": "wheel_diameter_mm", "name": "Wheel Diameter", "datatype": "number", "unit_family": "length", "canonical_unit": "mm", "min": 20, "max": 3000, "required_for": ["ecommerce"], "aliases": ["wheel diameter", "impeller diameter", "wheel size", "blade diameter"] },
+        { "code": "inlet_size_mm", "name": "Inlet Size", "datatype": "number", "unit_family": "length", "canonical_unit": "mm", "min": 10, "max": 3000, "required_for": ["enhanced"], "aliases": ["inlet size", "inlet diameter", "inlet", "duct connection"] },
+        { "code": "sound_level_dba", "name": "Sound Level", "datatype": "number", "unit_family": "sound", "canonical_unit": "dBA", "min": 10, "max": 130, "required_for": ["enhanced"], "aliases": ["sound level", "noise level", "sound power", "dba", "acoustic"] },
+        { "code": "drive_type", "name": "Drive Type", "datatype": "enum", "allowed_values": ["Direct Drive", "Belt Drive"], "required_for": ["ecommerce"], "aliases": ["drive", "drive type", "coupling", "transmission"] },
+        { "code": "bearing_type", "name": "Bearing Type", "datatype": "enum", "allowed_values": ["Ball Bearing", "Sleeve Bearing", "Roller Bearing"], "required_for": ["enhanced"], "aliases": ["bearing", "bearing type", "bearings"] },
+        { "code": "wheel_material", "name": "Wheel Material", "datatype": "enum", "allowed_values": ["Galvanized Steel", "Aluminum", "Stainless Steel", "Composite"], "required_for": ["enhanced"], "aliases": ["wheel material", "impeller material", "blade material"] },
+        { "code": "operating_temp_max_c", "name": "Max Operating Temperature", "datatype": "number", "unit_family": "temperature", "canonical_unit": "degC", "min": 0, "max": 600, "required_for": ["enhanced"], "aliases": ["max operating temperature", "maximum temperature", "temperature rating", "air temperature"] }
+      ],
+      "rules": [
+        { "id": "bl_direct_drive_speed", "type": "implication", "if": "drive_type == 'Direct Drive'", "then_present": ["speed_rpm"], "message": "Direct-drive blowers must declare a rated speed." },
+        { "id": "bl_3ph_voltage", "type": "implication", "if": "phase == '3'", "then_min": { "voltage_v": 190 }, "message": "Three-phase blowers below 190 V are unusual; verify the supply voltage." }
+      ]
+    },
+
+    "hvac_thermostat": {
+      "attributes": [
+        { "code": "control_type", "name": "Control Type", "datatype": "enum", "allowed_values": ["Non-Programmable", "5-1-1 Programmable", "7-Day Programmable", "Smart / Wi-Fi Connected"], "required_for": ["core"], "variant_defining": true, "aliases": ["control type", "programmability", "type", "programming"] },
+        { "code": "stages_heat", "name": "Heating Stages", "datatype": "number", "min": 0, "max": 6, "required_for": ["core"], "variant_defining": true, "aliases": ["heating stages", "heat stages", "stages heat", "h stages"] },
+        { "code": "stages_cool", "name": "Cooling Stages", "datatype": "number", "min": 0, "max": 6, "required_for": ["core"], "variant_defining": true, "aliases": ["cooling stages", "cool stages", "stages cool", "c stages"] },
+        { "code": "compatible_systems", "name": "Compatible Systems", "datatype": "string", "cardinality": "multi", "required_for": ["ecommerce"], "aliases": ["compatible systems", "compatibility", "system type", "works with"] },
+        { "code": "connectivity", "name": "Connectivity", "datatype": "string", "cardinality": "multi", "required_for": ["ecommerce"], "aliases": ["connectivity", "communication", "protocol", "network", "wireless"] },
+        { "code": "display_type", "name": "Display Type", "datatype": "enum", "allowed_values": ["LCD", "Backlit LCD", "LED", "Touchscreen", "E-Ink", "None"], "required_for": ["ecommerce"], "aliases": ["display", "display type", "screen", "interface"] },
+        { "code": "supply_voltage_v", "name": "Supply Voltage", "datatype": "number", "unit_family": "voltage", "canonical_unit": "V", "min": 3, "max": 250, "required_for": ["ecommerce"], "aliases": ["supply voltage", "voltage", "power supply", "input voltage", "vac"] },
+        { "code": "setpoint_min_c", "name": "Min Setpoint", "datatype": "number", "unit_family": "temperature", "canonical_unit": "degC", "min": -20, "max": 30, "required_for": ["enhanced"], "aliases": ["min setpoint", "minimum setpoint", "setpoint range", "temperature range"] },
+        { "code": "setpoint_max_c", "name": "Max Setpoint", "datatype": "number", "unit_family": "temperature", "canonical_unit": "degC", "min": 10, "max": 60, "required_for": ["enhanced"], "aliases": ["max setpoint", "maximum setpoint", "setpoint range", "temperature range"] },
+        { "code": "accuracy_c", "name": "Temperature Accuracy", "datatype": "number", "unit_family": "temperature", "canonical_unit": "degC", "min": 0.01, "max": 5, "required_for": ["enhanced"], "aliases": ["accuracy", "temperature accuracy", "tolerance", "precision"] },
+        { "code": "width_mm", "name": "Width", "datatype": "number", "unit_family": "length", "canonical_unit": "mm", "min": 10, "max": 500, "required_for": ["ecommerce"], "aliases": ["width", "w"] },
+        { "code": "height_mm", "name": "Height", "datatype": "number", "unit_family": "length", "canonical_unit": "mm", "min": 10, "max": 500, "required_for": ["ecommerce"], "aliases": ["height", "h"] },
+        { "code": "depth_mm", "name": "Depth", "datatype": "number", "unit_family": "length", "canonical_unit": "mm", "min": 5, "max": 300, "required_for": ["ecommerce"], "aliases": ["depth", "d", "projection"] }
+      ],
+      "rules": [
+        { "id": "th_setpoint_order", "type": "cross_attribute", "expression": "setpoint_max_c > setpoint_min_c", "message": "Max setpoint must be greater than min setpoint." },
+        { "id": "th_wifi_connectivity", "type": "implication", "if": "control_type == 'Smart / Wi-Fi Connected'", "then_present": ["connectivity"], "message": "Smart thermostats must declare their connectivity protocols." }
+      ]
+    },
+
+    "industrial_generic": {
+      "attributes": [
+        { "code": "material", "name": "Material", "datatype": "string", "required_for": ["ecommerce"], "aliases": ["material", "construction", "body material", "made of"] },
+        { "code": "length_mm", "name": "Length", "datatype": "number", "unit_family": "length", "canonical_unit": "mm", "min": 0.1, "max": 100000, "required_for": ["ecommerce"], "aliases": ["length", "l", "overall length"] },
+        { "code": "width_mm", "name": "Width", "datatype": "number", "unit_family": "length", "canonical_unit": "mm", "min": 0.1, "max": 100000, "required_for": ["ecommerce"], "aliases": ["width", "w"] },
+        { "code": "height_mm", "name": "Height", "datatype": "number", "unit_family": "length", "canonical_unit": "mm", "min": 0.1, "max": 100000, "required_for": ["ecommerce"], "aliases": ["height", "h", "thickness"] },
+        { "code": "operating_temp_max_c", "name": "Max Operating Temperature", "datatype": "number", "unit_family": "temperature", "canonical_unit": "degC", "min": -50, "max": 2000, "required_for": ["enhanced"], "aliases": ["max operating temperature", "temperature rating", "maximum temperature"] },
+        { "code": "color", "name": "Color", "datatype": "string", "required_for": ["enhanced"], "aliases": ["color", "colour", "finish colour"] }
+      ],
+      "rules": []
+    }
+  }
+}

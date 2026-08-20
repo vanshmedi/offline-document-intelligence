@@ -1,0 +1,35 @@
+# ── Core (required) ────────────────────────────────────────────────────
+pydantic>=2.0.0
+click>=8.0.0
+duckdb>=1.0.0
+numpy>=1.24.0
+httpx>=0.24.0
+
+# ── Document parsing ───────────────────────────────────────────────────
+pdfplumber>=0.11.0          # PDF text + table extraction with layout
+beautifulsoup4>=4.12.0      # HTML product pages
+lxml>=5.0.0                 # BeautifulSoup parser backend
+openpyxl>=3.1.0             # XLSX price files and ERP extracts
+Pillow>=10.0.0              # image asset analysis
+
+# ── Console UI ─────────────────────────────────────────────────────────
+streamlit>=1.30.0
+
+# ── Optional: semantic search ──────────────────────────────────────────
+# The engine runs fully without these; `embedding_enabled: false` in
+# settings.json disables the vector index and everything else still works.
+sentence-transformers>=3.0.0
+# hnswlib>=0.8.0            # ANN index, used automatically above ~2k products
+#
+# Install torch separately, matched to your hardware:
+#   CPU:   pip install torch
+#   CUDA:  pip install torch --index-url https://download.pytorch.org/whl/cu126
+
+# ── Optional: OCR for scanned documents ────────────────────────────────
+# Without one of these, pages with no text layer are reported as explicit
+# gaps in the audit log rather than being silently dropped.
+# pytesseract>=0.3.10       # also needs the tesseract binary on PATH
+# easyocr>=1.7.0
+
+# ── Development ────────────────────────────────────────────────────────
+reportlab>=4.0.0            # generates the synthetic sample catalog
