@@ -1,16 +1,16 @@
 # Setup & Run Guide
 
-From a clean machine to a built catalog. Commands are written for **Windows
-PowerShell** (your setup); macOS/Linux equivalents are noted where they differ.
+From a clean machine to a running console. Commands are written for **Windows
+PowerShell**; macOS/Linux equivalents are noted where they differ.
 
 ---
 
-## Step 1 — Install Python dependencies
+## Step 1 — Install dependencies
 
 ```powershell
 cd "C:\Users\Kavy Khilrani\Desktop\Projects\offline-document-intelligence"
 
-# Optional but recommended: an isolated environment
+# Optional but recommended
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1          # macOS/Linux: source .venv/bin/activate
 
@@ -29,20 +29,20 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 python -m product_intel.cli schema
 ```
 
-You should see the seven categories and their ETIM/UNSPSC codes.
+You should see seven categories with their ETIM and UNSPSC codes.
 
 ---
 
 ## Step 2 — Choose your AI backend
 
-The engine runs in three modes. **All three produce a working catalog** — the
-difference is how many attributes get recovered from prose that the
-deterministic extractor could not parse.
+Three modes. **All three produce a working catalog** — the difference is how
+many attributes get recovered from prose the deterministic extractor could not
+parse.
 
 | Mode | What it is | When to use |
 |---|---|---|
-| **Offline (Ollama)** | A model running on your own machine | Default. Demos, sensitive manufacturer data, no API cost. |
-| **Cloud (OpenRouter)** | One key, most hosted models | Best extraction quality; useful when your GPU is busy. |
+| **Offline (Ollama)** | A model on your own machine | Default. Demos, sensitive manufacturer data, no API cost. |
+| **Cloud (AWS Bedrock)** | Bedrock via your AWS account | Best extraction quality; no local GPU needed. |
 | **Off** | No model at all | Fastest. Proves the deterministic core works alone. |
 
 Check what's active at any time:
@@ -65,16 +65,14 @@ Then, in a **separate terminal that stays open**:
 ollama serve
 ```
 
-Back in your project terminal, pull a model and select it:
+Back in your project terminal:
 
 ```powershell
 ollama pull qwen2.5:14b
-
 python -m product_intel.cli llm use ollama
 ```
 
-That last command switches the backend and immediately sends a test request.
-Expect:
+That switches the backend and immediately sends a test request:
 
 ```
 Switched LLM backend
@@ -88,75 +86,122 @@ OK  round trip 1.84s
 ```
 
 `qwen2.5:14b` needs roughly 10 GB of VRAM. On a smaller card use
-`ollama pull qwen2.5:7b` and `--model qwen2.5:7b`. See all suggestions with
-`python -m product_intel.cli llm models`.
+`ollama pull qwen2.5:7b` and `--model qwen2.5:7b`. See
+`python -m product_intel.cli llm models` for all suggestions.
 
 ---
 
-### Option B — Cloud with OpenRouter
+### Option B — Cloud with AWS Bedrock
 
-**1. Get a key.**
+**1. Enable model access.**
 
-- Sign up at **https://openrouter.ai**
-- Go to **https://openrouter.ai/keys** → **Create Key**
-- Copy it — it starts with `sk-or-v1-`
-- Add credit at **https://openrouter.ai/credits**. A few dollars covers many
-  full catalog builds; this engine only calls the model for attributes the
-  deterministic pass could not find.
+Bedrock models are opt-in per account and per region — this is the step people
+skip, and it produces an `AccessDeniedException` later.
 
-**2. Put the key in a `.env` file.**
+- Sign in to the **AWS Console** → search **Bedrock**
+- Pick your region (top right). **US East (N. Virginia) `us-east-1`** has the
+  widest model selection.
+- Left sidebar → **Model access** → **Modify model access**
+- Tick the models you want (Anthropic Claude, Amazon Nova) → **Submit**
+- Amazon models are approved instantly; Anthropic models are usually approved
+  within a minute or two.
 
-Copy the template and edit it:
+**2. Create credentials.**
+
+AWS Console → **IAM** → **Users** → **Create user**
+
+- Name it something like `product-intel`
+- **Attach policies directly** → search and attach **`AmazonBedrockFullAccess`**
+
+  Tighter alternative, if you'd rather scope it down — create an inline policy:
+  ```json
+  {
+    "Version": "2012-10-17",
+    "Statement": [{
+      "Effect": "Allow",
+      "Action": [
+        "bedrock:InvokeModel",
+        "bedrock:ListFoundationModels",
+        "bedrock:ListInferenceProfiles"
+      ],
+      "Resource": "*"
+    }]
+  }
+  ```
+- Create the user, then open it → **Security credentials** →
+  **Create access key** → choose **Application running outside AWS**
+- Copy both the **Access key ID** (`AKIA…`) and the **Secret access key**.
+  The secret is shown once.
+
+**3. Put the credentials in a `.env` file.**
 
 ```powershell
 Copy-Item .env.example .env
 notepad .env
 ```
 
-Set the one line:
+Fill in the two lines:
 
 ```
-OPENROUTER_API_KEY=sk-or-v1-your-actual-key-here
+AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
+AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
 ```
 
-Save and close. `.env` is gitignored, so the key is never committed, and it is
-never written into `settings.json`.
+Save and close. `.env` is gitignored, and credentials are never written into
+`settings.json`.
 
-> **Alternative — environment variable.** If you prefer not to use a file:
+> **Alternatives.** Any standard AWS credential source works — boto3's normal
+> chain is used, so you can skip `.env` entirely:
 > ```powershell
-> $env:OPENROUTER_API_KEY = "sk-or-v1-..."          # this session only
-> [Environment]::SetEnvironmentVariable("OPENROUTER_API_KEY","sk-or-v1-...","User")   # permanent
+> aws configure                                   # writes ~/.aws/credentials
+> $env:AWS_ACCESS_KEY_ID = "AKIA..."              # this session only
 > ```
-> macOS/Linux: `export OPENROUTER_API_KEY="sk-or-v1-..."`
->
+> …or use a named profile:
+> ```powershell
+> python -m product_intel.cli llm use bedrock --profile my-profile
+> ```
+> …or an EC2/ECS/EKS instance role, with no credentials on disk at all.
 > A variable set in the shell always wins over the `.env` file.
 
-**3. Switch the backend.**
+**4. Switch the backend.**
 
 ```powershell
-python -m product_intel.cli llm use openrouter
+python -m product_intel.cli llm use bedrock --region us-east-1
 ```
 
 Expect:
 
 ```
 Switched LLM backend
-  mode      : CLOUD   (requests go to a hosted API)
-  provider  : openrouter
-  model     : anthropic/claude-3.5-haiku   (provider default)
-  key env   : OPENROUTER_API_KEY [set]
+  mode      : CLOUD   (requests go to AWS Bedrock)
+  provider  : bedrock
+  model     : us.anthropic.claude-3-5-haiku-20241022-v1:0   (provider default)
+  region    : us-east-1
+  creds     : environment ($AWS_ACCESS_KEY_ID)
   status    : ready
 
-Probing openrouter / anthropic/claude-3.5-haiku ...
+Probing bedrock / us.anthropic.claude-3-5-haiku-20241022-v1:0 ...
 OK  round trip 0.91s
 ```
 
-**4. Pick a different model (optional).**
+**5. Pick a different model (optional).**
 
 ```powershell
 python -m product_intel.cli llm models
-python -m product_intel.cli llm use openrouter --model openai/gpt-4o-mini
 ```
+
+This queries **your** account and lists what is actually enabled in your
+region, rather than guessing. Then:
+
+```powershell
+python -m product_intel.cli llm use bedrock --model us.amazon.nova-lite-v1:0
+```
+
+> **Inference profiles.** Most current models can only be invoked through a
+> cross-region inference profile — an ID starting `us.`, `eu.` or `apac.`.
+> `us.anthropic.claude-3-5-haiku-20241022-v1:0` works;
+> `anthropic.claude-3-5-haiku-20241022-v1:0` returns
+> `ResourceNotFoundException`. When in doubt, copy the ID from `llm models`.
 
 Each provider remembers its own model, so switching back and forth keeps both
 selections.
@@ -176,19 +221,16 @@ scorecard shows it honestly.
 
 ## Step 3 — Generate the sample catalog
 
-The repo ships a generator that produces realistic industrial source documents —
+The repo ships a generator producing realistic industrial source documents —
 multi-column variant tables, mixed unit systems, a scanned page, deliberate
-cross-source conflicts, and one SKU that exists only as a thin submittal.
+cross-source conflicts, and a SKU that exists only as a thin submittal.
 
 ```powershell
 python scripts\generate_sample_catalog.py --out Sources
 ```
 
-Creates ~16 files across three manufacturers: datasheets, submittals, HTML
-product pages, a distributor price CSV, and product images.
-
 > Using your own data instead? Drop PDFs, HTML, CSV/XLSX and images anywhere
-> under `Sources\` (subfolders are fine) and skip this step.
+> under `Sources\` and skip this step.
 
 ---
 
@@ -198,11 +240,9 @@ product pages, a distributor price CSV, and product images.
 python -m product_intel.cli run Sources
 ```
 
-This ingests every source, resolves product identities, extracts against the
+Ingests every source, resolves product identities, extracts against the
 attribute dictionary, normalizes units, assembles golden records, fills gaps
-from product families, generates commerce copy, validates, scores, and indexes.
-
-Expect roughly:
+from product families, generates commerce copy, validates, scores and indexes.
 
 ```
 Quality scorecard
@@ -214,14 +254,45 @@ Quality scorecard
   channel-ready SKUs        : 0 -> 9 of 19 sellable (47%)
   gaps filled from family   : 4
   content fields generated  : 144
-  knowledge graph           : 56 nodes, 239 edges
 ```
 
-Re-running is incremental — unchanged sources are skipped (~0.1s instead of ~5s).
+Re-running is incremental — unchanged sources are skipped.
 
 ---
 
-## Step 5 — Explore
+## Step 5 — Open the console
+
+```powershell
+python -m product_intel.cli serve
+```
+
+Opens **http://localhost:8000** with:
+
+| View | What it's for |
+|---|---|
+| **Overview** | Before/after quality, provenance breakdown, and which required attributes are least covered across the catalog |
+| **Products** | Filterable browser; every attribute row expands to its source, locator and verbatim quote, and links through to the highlighted passage in the document |
+| **Review** | Prioritized flag queue with inline corrections |
+| **Search** | Attribute matching plus semantic retrieval |
+| **Schema** | The attribute dictionary — datatypes, units, legal values, aliases, rules |
+| **Settings** | Backend toggle and catalog export |
+
+The API is at **http://localhost:8000/api/docs** (interactive OpenAPI).
+
+Useful flags:
+
+```powershell
+python -m product_intel.cli serve --port 9000
+python -m product_intel.cli serve --host 0.0.0.0      # expose on your network
+python -m product_intel.cli serve --reload            # auto-reload while developing
+```
+
+> Added credentials while the server is running? Restart it — `.env` is read at
+> startup.
+
+---
+
+## Step 6 — Or stay in the terminal
 
 ```powershell
 python -m product_intel.cli status
@@ -234,8 +305,6 @@ python -m product_intel.cli show VX100-2P-C20
 python -m product_intel.cli show VX100-4P-C40
 
 python -m product_intel.cli search "3 pole circuit breaker rated at least 30A"
-python -m product_intel.cli search "stainless steel ball valve 1 inch NPT"
-
 python -m product_intel.cli review
 python -m product_intel.cli correct FV3000-100 body_material "Stainless Steel 316" --reviewer you
 
@@ -245,41 +314,23 @@ python -m product_intel.cli export csv
 
 ---
 
-## Step 6 — The visual console
-
-```powershell
-streamlit run app.py
-```
-
-Opens at http://localhost:8501 with four views: **Scorecard**, **Products**
-(every attribute expandable to its source quote), **Review queue** (correct
-values inline), and **Search**.
-
-The **AI backend toggle is in the sidebar** — flip between Offline, Cloud and
-Off without leaving the browser. The choice is written to `settings.json`, so
-the CLI picks it up too.
-
-> Adding a key while Streamlit is running? Restart it — `.env` is read at
-> startup.
-
----
-
 ## Switching backends later
-
-Anywhere, any time:
 
 ```powershell
 python -m product_intel.cli llm use ollama        # offline
-python -m product_intel.cli llm use openrouter    # cloud
+python -m product_intel.cli llm use bedrock       # cloud
 python -m product_intel.cli llm use off           # no model
 python -m product_intel.cli llm status            # what's active
 python -m product_intel.cli llm test              # probe the connection
 ```
 
+…or use the toggle in the console's **Settings** view. Both write to the same
+`settings.json`, so they stay in step.
+
 To re-extract an existing catalog with a stronger model:
 
 ```powershell
-python -m product_intel.cli llm use openrouter --model anthropic/claude-sonnet-4
+python -m product_intel.cli llm use bedrock --model us.anthropic.claude-sonnet-4-20250514-v1:0
 python -m product_intel.cli ingest Sources --force
 python -m product_intel.cli build
 ```
@@ -295,19 +346,25 @@ survive this — they outrank every automated source.
 `ollama serve` must be running in its own terminal. Confirm with
 `curl http://localhost:11434/api/tags`.
 
-**`No API key in $OPENROUTER_API_KEY`**
-`.env` must sit in the project root, next to `settings.json`. Check the line has
-no quotes and no spaces around `=`. Confirm with:
+**`No AWS credentials found`**
+`.env` must sit in the project root, next to `settings.json`. No quotes, no
+spaces around `=`. Confirm with:
 ```powershell
-python -c "from product_intel.config import settings; print(bool(settings.api_key('openrouter')))"
+python -c "from product_intel.config import settings; print(settings.aws_credential_source())"
 ```
 
-**`HTTP 402: Insufficient credits`**
-Add credit at https://openrouter.ai/credits.
+**`AccessDeniedException`**
+Model access is not enabled for that model in that region. Bedrock console →
+**Model access** → **Modify model access**. Also check the IAM identity has
+`bedrock:InvokeModel`.
 
-**`HTTP 404: model not found`**
-Check the exact ID at https://openrouter.ai/models — they are case-sensitive and
-include the vendor prefix (`anthropic/claude-3.5-haiku`, not `claude-3.5-haiku`).
+**`ResourceNotFoundException`**
+The model ID is wrong for the region, or you used a bare model ID where an
+inference profile is required. Run `python -m product_intel.cli llm models` and
+copy an ID from the list.
+
+**`InvalidSignatureException`**
+Usually a mistyped secret key, or a machine clock that has drifted.
 
 **The toggle doesn't seem to take effect**
 A `PI_LLM_PROVIDER` / `PI_LLM_ENABLED` / `PI_LLM_MODEL` environment variable
@@ -326,6 +383,9 @@ The embedding model (~2 GB) downloads once. To skip embeddings entirely, set
 `"embedding_enabled": false` in `settings.json` — everything except semantic
 search still works.
 
+**Port 8000 is in use**
+`python -m product_intel.cli serve --port 9000`
+
 **Start over**
 ```powershell
 python -m product_intel.cli clear --yes
@@ -336,14 +396,14 @@ Deletes derived data only. `Sources\` is never touched.
 
 ## What runs where
 
-| | Offline (Ollama) | Cloud (OpenRouter) |
+| | Offline (Ollama) | Cloud (Bedrock) |
 |---|---|---|
 | Document parsing | your machine | your machine |
 | Table & spec extraction | your machine | your machine |
 | Unit normalization | your machine | your machine |
 | Identity, conflicts, scoring | your machine | your machine |
-| Gap-fill on unparsed prose | your machine | **sent to the API** |
-| Copy generation | your machine | **sent to the API** |
+| Gap-fill on unparsed prose | your machine | **sent to Bedrock** |
+| Copy generation | your machine | **sent to Bedrock** |
 | Embeddings | your machine | your machine |
 
 Only the two enrichment steps ever call a model. Everything that determines

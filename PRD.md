@@ -224,7 +224,7 @@ blending them hides the number that matters.
 ## 10. Deliverables
 
 Engine and four-layer pipeline; attribute dictionary and taxonomy for four
-verticals; CLI; Streamlit console; exporters; synthetic sample catalog
+verticals; CLI; FastAPI service + web console; exporters; synthetic sample catalog
 generator; automated tests; documentation.
 
 Test coverage explicitly includes: unit conversion correctness including

@@ -43,9 +43,9 @@ Three things are always true of every value in the catalog:
 ```bash
 pip install -r requirements.txt
 
-# Pick an AI backend (or skip — it defaults to offline Ollama)
+# Pick an AI backend (defaults to offline Ollama)
 python -m product_intel.cli llm use ollama        # offline, on this machine
-python -m product_intel.cli llm use openrouter    # cloud, needs a key in .env
+python -m product_intel.cli llm use bedrock       # AWS Bedrock, needs credentials
 python -m product_intel.cli llm use off           # no model at all
 
 # Generate a synthetic industrial catalog (electrical / plumbing / HVAC)
@@ -54,18 +54,11 @@ python scripts/generate_sample_catalog.py --out Sources
 # Ingest, enrich, validate, score and index
 python -m product_intel.cli run Sources
 
-# Explore
-python -m product_intel.cli status
-python -m product_intel.cli show VX100-2P-C20
-python -m product_intel.cli search "3 pole circuit breaker rated at least 30A"
-python -m product_intel.cli review
-python -m product_intel.cli export bmecat
-
-# Visual console (the backend toggle lives in the sidebar)
-streamlit run app.py
+# Web console + API at http://localhost:8000
+python -m product_intel.cli serve
 ```
 
-**Full step-by-step setup, including how to get and install an API key:
+**Full step-by-step setup, including AWS Bedrock model access and credentials:
 [SETUP.md](SETUP.md).**
 
 It runs with **no language model and no GPU**. Extraction is deterministic-first;
@@ -77,24 +70,49 @@ PI_LLM_ENABLED=false PI_EMBEDDING_ENABLED=false python -m product_intel.cli run 
 
 ---
 
+## The console
+
+`product-intel serve` starts a FastAPI service and a single-page console on the
+same port.
+
+| View | What it does |
+|---|---|
+| **Overview** | Before/after quality across four axes, provenance breakdown, and which required attributes are least covered across the catalog — the list of what to chase the manufacturer for |
+| **Products** | Filterable browser. Every attribute row expands to its source, locator and verbatim quote, then links through to the document mirror with the passage highlighted |
+| **Review** | Flag queue ordered by reason weight × (1 − confidence), with inline corrections that outrank every automated source |
+| **Search** | Attribute matching and semantic retrieval combined |
+| **Schema** | The attribute dictionary: datatypes, units, legal values, recognised aliases, validation rules |
+| **Settings** | Backend toggle, connection test, and catalog export |
+
+The front end is **plain ES modules with no build step** — no node, no bundler,
+no `npm install`. `uvicorn` is the only process involved, which means the demo
+cannot break because a build failed. The API is browsable at `/api/docs`.
+
+Every attribute the API returns carries either an `evidence` block naming the
+source, page and verbatim quote, or an `inference` block explaining how it was
+derived. There is no third state, so a client physically cannot render an
+unattributed value.
+
+---
+
 ## Offline or cloud, switchable at runtime
 
 | Mode | Backend | Trade-off |
 |---|---|---|
 | **Offline** | Ollama on this machine | Nothing leaves the building. The default, and the right answer for unreleased manufacturer specs. |
-| **Cloud** | OpenRouter — one key, most hosted models | Higher extraction coverage on messy prose; costs per token. |
+| **Cloud** | AWS Bedrock | Higher extraction coverage on messy prose; costs per token. |
 | **Off** | none | Fastest. Deterministic extraction only. |
 
 ```bash
 python -m product_intel.cli llm status     # what's active, and can it be reached
-python -m product_intel.cli llm models     # models known to work well here
+python -m product_intel.cli llm models     # queries YOUR AWS account for enabled models
 python -m product_intel.cli llm test       # probe the connection
-python -m product_intel.cli llm use openrouter --model openai/gpt-4o-mini
+python -m product_intel.cli llm use bedrock --model us.amazon.nova-lite-v1:0
 ```
 
 The choice persists to `settings.json` and is shared by the CLI and the console.
 Each provider remembers its own model, so switching back and forth never leaves
-a cloud API pointed at an Ollama tag it has never heard of.
+Bedrock pointed at an Ollama tag.
 
 **Only two steps ever call a model** — gap-filling on prose the deterministic
 pass could not parse, and copy generation. Parsing, table extraction, unit
@@ -102,8 +120,9 @@ normalization, identity resolution, conflict arbitration, validation and scoring
 are local in every mode. That is why offline is the default rather than a
 fallback: nothing that determines catalog *correctness* depends on the network.
 
-API keys are read from the environment or a gitignored `.env` file, and are
-never written to `settings.json`.
+AWS credentials come from the standard boto3 chain — environment, `.env`, a
+named profile, `~/.aws/credentials`, or an instance role — and are never written
+to `settings.json`.
 
 ---
 
@@ -279,6 +298,7 @@ argument: a reviewer corrects one product, not five hundred.
 | `search <query>` | Attribute filters → SQL; free text → semantics. |
 | `review` | Human review queue, highest impact first. |
 | `correct <MPN> <attr> <value>` | Apply a correction and learn from it. |
+| `serve` | Start the API and web console. |
 | `llm status` / `use` / `test` / `models` | Switch and inspect the AI backend. |
 | `export <fmt>` | `json` · `csv` · `bmecat` · `gdsn`. |
 | `query <sql>` | Read-only SQL over the catalog database. |
@@ -323,10 +343,12 @@ being silently ignored.
 
 | Key | Default | Notes |
 |---|---|---|
-| `llm_provider` | `ollama` | `ollama` · `openrouter` · `openai` · `null` |
+| `llm_provider` | `ollama` | `ollama` · `bedrock` · `null` |
 | `llm_model` | `null` | Explicit override; leave null to use the provider's default |
 | `ollama_model` | `qwen2.5:14b` | Used when the provider is `ollama` |
-| `openrouter_model` | `anthropic/claude-3.5-haiku` | Used when the provider is `openrouter` |
+| `bedrock_model` | `us.anthropic.claude-3-5-haiku-…` | Used when the provider is `bedrock` |
+| `aws_region` | `us-east-1` | Bedrock region |
+| `aws_profile` | `null` | Named AWS profile; null uses the default credential chain |
 | `llm_enabled` | `true` | `false` runs fully deterministically |
 | `embedding_model` | `BAAI/bge-m3` | |
 | `embedding_device` | `auto` | `auto` · `cpu` · `cuda` |

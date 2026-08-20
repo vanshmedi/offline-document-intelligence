@@ -461,21 +461,19 @@ class TestValidation(unittest.TestCase):
 
 
 class TestLLMProviderToggle(unittest.TestCase):
-    """The offline/cloud switch, including that it never leaks or persists a key."""
+    """The offline/cloud switch, including that it never leaks or persists a secret."""
 
     def test_provider_resolution(self):
         from product_intel.llm.provider import (
+            BedrockProvider,
             NullProvider,
             OllamaProvider,
-            OpenAIProvider,
-            OpenRouterProvider,
             get_provider,
         )
 
         for name, cls in (
             ("ollama", OllamaProvider),
-            ("openrouter", OpenRouterProvider),
-            ("openai", OpenAIProvider),
+            ("bedrock", BedrockProvider),
             ("null", NullProvider),
         ):
             self.assertIsInstance(get_provider(Settings(llm_provider=name)), cls, name)
@@ -483,53 +481,131 @@ class TestLLMProviderToggle(unittest.TestCase):
     def test_disabled_always_yields_null_provider(self):
         from product_intel.llm.provider import NullProvider, get_provider
 
-        cfg = Settings(llm_provider="openrouter", llm_enabled=False)
+        cfg = Settings(llm_provider="bedrock", llm_enabled=False)
         self.assertIsInstance(get_provider(cfg), NullProvider)
 
     def test_model_default_follows_provider(self):
-        """Switching backend must not leave a cloud API pointed at an Ollama tag."""
+        """Switching backend must not leave Bedrock pointed at an Ollama tag."""
         self.assertEqual(Settings(llm_provider="ollama").active_model, "qwen2.5:14b")
-        self.assertEqual(
-            Settings(llm_provider="openrouter").active_model, "anthropic/claude-3.5-haiku"
+        self.assertTrue(
+            Settings(llm_provider="bedrock").active_model.startswith("us.anthropic.")
         )
-        self.assertEqual(Settings(llm_provider="openai").active_model, "gpt-4o-mini")
 
     def test_explicit_model_overrides_provider_default(self):
-        cfg = Settings(llm_provider="openrouter", llm_model="openai/gpt-4o-mini")
-        self.assertEqual(cfg.active_model, "openai/gpt-4o-mini")
+        cfg = Settings(llm_provider="bedrock", llm_model="us.amazon.nova-lite-v1:0")
+        self.assertEqual(cfg.active_model, "us.amazon.nova-lite-v1:0")
 
     def test_offline_classification(self):
         self.assertTrue(Settings(llm_provider="ollama").is_offline)
         self.assertTrue(Settings(llm_provider="null").is_offline)
-        self.assertTrue(Settings(llm_provider="openrouter", llm_enabled=False).is_offline)
-        self.assertFalse(Settings(llm_provider="openrouter").is_offline)
+        self.assertTrue(Settings(llm_provider="bedrock", llm_enabled=False).is_offline)
+        self.assertFalse(Settings(llm_provider="bedrock").is_offline)
 
-    def test_api_key_comes_from_environment_only(self):
-        import os
+    def test_no_secret_is_ever_serialized(self):
+        """Settings holds env var *names*, never values."""
+        cfg = Settings(llm_provider="bedrock")
+        dumped = json.dumps(cfg.model_dump())
+        self.assertIn("AWS_ACCESS_KEY_ID", dumped)      # the name is fine
+        for field in cfg.model_dump().values():
+            if isinstance(field, str):
+                self.assertFalse(field.startswith("AKIA"), "a live key reached settings")
 
-        cfg = Settings(llm_provider="openrouter", openrouter_api_key_env="PI_TEST_KEY")
-        os.environ.pop("PI_TEST_KEY", None)
-        self.assertIsNone(cfg.api_key())
-        os.environ["PI_TEST_KEY"] = "sk-or-v1-test"
-        try:
-            self.assertEqual(cfg.api_key(), "sk-or-v1-test")
-            # The key must never appear in the serialized settings.
-            self.assertNotIn("sk-or-v1-test", json.dumps(cfg.model_dump()))
-        finally:
-            os.environ.pop("PI_TEST_KEY", None)
+    def test_bedrock_converse_request_shape(self):
+        """Pin the wire format: Converse API, model ID, system block, token cap."""
+        from unittest import mock
 
-    def test_missing_key_fails_fast_without_retrying(self):
-        """A missing key is a configuration error; retrying it just wastes time."""
-        import os
+        from product_intel.llm.provider import BedrockProvider
 
-        from product_intel.llm.provider import LLMConfigurationError, OpenRouterProvider
+        cfg = Settings(
+            llm_provider="bedrock",
+            bedrock_model="us.amazon.nova-lite-v1:0",
+            bedrock_max_tokens=1234,
+            llm_temperature=0.0,
+        )
+        provider = BedrockProvider(cfg)
 
-        os.environ.pop("PI_TEST_ABSENT_KEY", None)
-        cfg = Settings(llm_provider="openrouter", openrouter_api_key_env="PI_TEST_ABSENT_KEY")
-        provider = OpenRouterProvider(cfg)
-        self.assertFalse(provider.available)
-        with self.assertRaises(LLMConfigurationError):
-            provider.complete("hello")
+        fake_client = mock.Mock()
+        fake_client.converse.return_value = {
+            "output": {"message": {"content": [{"text": '{"ok": true}'}]}},
+            "stopReason": "end_turn",
+        }
+        with mock.patch.object(provider, "_get_client", return_value=fake_client):
+            result = provider.complete_json("probe", expect="object")
+
+        self.assertEqual(result, {"ok": True})
+        kwargs = fake_client.converse.call_args[1]
+        self.assertEqual(kwargs["modelId"], "us.amazon.nova-lite-v1:0")
+        self.assertEqual(kwargs["messages"][0]["role"], "user")
+        self.assertEqual(kwargs["messages"][0]["content"][0]["text"], "probe")
+        self.assertEqual(kwargs["inferenceConfig"]["maxTokens"], 1234)
+        # json_mode is requested through the system block, since Converse has
+        # no response_format switch.
+        self.assertTrue(any("JSON" in b["text"] for b in kwargs["system"]))
+
+    def test_bedrock_multi_block_response_is_joined(self):
+        from unittest import mock
+
+        from product_intel.llm.provider import BedrockProvider
+
+        provider = BedrockProvider(Settings(llm_provider="bedrock"))
+        fake_client = mock.Mock()
+        fake_client.converse.return_value = {
+            "output": {"message": {"content": [{"text": '{"a":'}, {"text": " 1}"}]}},
+            "stopReason": "end_turn",
+        }
+        with mock.patch.object(provider, "_get_client", return_value=fake_client):
+            self.assertEqual(provider.complete_json("p", expect="object"), {"a": 1})
+
+    def test_bedrock_errors_are_translated_with_a_fix(self):
+        """Each Bedrock failure mode has a specific remedy; say what it is."""
+        from botocore.exceptions import ClientError
+
+        from product_intel.llm.provider import (
+            LLMConfigurationError,
+            LLMUnavailable,
+            BedrockProvider,
+        )
+
+        provider = BedrockProvider(Settings(llm_provider="bedrock"))
+
+        cases = [
+            ("AccessDeniedException", "Model access", LLMConfigurationError),
+            ("ResourceNotFoundException", "inference profile", LLMConfigurationError),
+            ("UnrecognizedClientException", "rejected", LLMConfigurationError),
+            ("ThrottlingException", "transient", LLMUnavailable),
+        ]
+        for code, expected_hint, cls in cases:
+            err = ClientError({"Error": {"Code": code, "Message": "boom"}}, "Converse")
+            translated = provider._translate_error(err)
+            self.assertIsInstance(translated, cls, code)
+            self.assertIn(code, str(translated))
+            self.assertIn(expected_hint.lower(), str(translated).lower(), code)
+
+    def test_throttling_is_retryable_but_access_denied_is_not(self):
+        from product_intel.llm.provider import LLMConfigurationError, LLMUnavailable
+
+        # LLMConfigurationError must be a subclass so callers can catch either,
+        # but the retry loop must be able to tell them apart.
+        self.assertTrue(issubclass(LLMConfigurationError, LLMUnavailable))
+
+    def test_missing_boto3_is_a_clear_configuration_error(self):
+        import builtins
+        from unittest import mock
+
+        from product_intel.llm.provider import LLMConfigurationError, BedrockProvider
+
+        provider = BedrockProvider(Settings(llm_provider="bedrock"))
+        real_import = builtins.__import__
+
+        def no_boto3(name, *args, **kwargs):
+            if name == "boto3":
+                raise ImportError("No module named 'boto3'")
+            return real_import(name, *args, **kwargs)
+
+        with mock.patch.object(builtins, "__import__", side_effect=no_boto3):
+            with self.assertRaises(LLMConfigurationError) as ctx:
+                provider._get_client()
+        self.assertIn("pip install boto3", str(ctx.exception))
 
     def test_dotenv_does_not_override_real_environment(self):
         import os
@@ -554,61 +630,6 @@ class TestLLMProviderToggle(unittest.TestCase):
                 os.environ.pop("PI_TEST_A", None)
                 os.environ.pop("PI_TEST_B", None)
 
-    def test_openrouter_request_shape(self):
-        """Pin the wire format: endpoint, auth header, attribution headers, model."""
-        import os
-        from unittest import mock
-
-        from product_intel.llm.provider import OpenRouterProvider
-
-        os.environ["PI_TEST_OR_KEY"] = "sk-or-v1-abc"
-        cfg = Settings(
-            llm_provider="openrouter",
-            openrouter_api_key_env="PI_TEST_OR_KEY",
-            openrouter_model="openai/gpt-4o-mini",
-        )
-        provider = OpenRouterProvider(cfg)
-
-        response = mock.Mock(status_code=200)
-        response.json.return_value = {
-            "choices": [{"message": {"content": '{"ok": true}'}}]
-        }
-        try:
-            with mock.patch.object(provider._client, "post", return_value=response) as post:
-                result = provider.complete_json("probe", expect="object")
-        finally:
-            os.environ.pop("PI_TEST_OR_KEY", None)
-
-        self.assertEqual(result, {"ok": True})
-        url, kwargs = post.call_args[0][0], post.call_args[1]
-        self.assertEqual(url, "https://openrouter.ai/api/v1/chat/completions")
-        self.assertEqual(kwargs["headers"]["Authorization"], "Bearer sk-or-v1-abc")
-        self.assertIn("HTTP-Referer", kwargs["headers"])
-        self.assertIn("X-Title", kwargs["headers"])
-        self.assertEqual(kwargs["json"]["model"], "openai/gpt-4o-mini")
-        self.assertEqual(kwargs["json"]["response_format"], {"type": "json_object"})
-
-    def test_provider_error_body_is_surfaced(self):
-        """'Insufficient credits' is far more actionable than a bare 402."""
-        import os
-        from unittest import mock
-
-        from product_intel.llm.provider import LLMConfigurationError, OpenRouterProvider
-
-        os.environ["PI_TEST_OR_KEY"] = "sk-or-v1-abc"
-        cfg = Settings(llm_provider="openrouter", openrouter_api_key_env="PI_TEST_OR_KEY")
-        provider = OpenRouterProvider(cfg)
-
-        response = mock.Mock(status_code=402)
-        response.json.return_value = {"error": {"message": "Insufficient credits"}}
-        try:
-            with mock.patch.object(provider._client, "post", return_value=response):
-                with self.assertRaises(LLMConfigurationError) as ctx:
-                    provider.complete("probe")
-        finally:
-            os.environ.pop("PI_TEST_OR_KEY", None)
-        self.assertIn("Insufficient credits", str(ctx.exception))
-
     def test_save_settings_round_trip_preserves_other_keys(self):
         from product_intel.config import save_settings
 
@@ -620,10 +641,10 @@ class TestLLMProviderToggle(unittest.TestCase):
                 "target_channel": "ecommerce",
                 "max_workers": 7,
             }))
-            save_settings({"llm_provider": "openrouter"}, path)
+            save_settings({"llm_provider": "bedrock"}, path)
             written = json.loads(path.read_text())
 
-        self.assertEqual(written["llm_provider"], "openrouter")
+        self.assertEqual(written["llm_provider"], "bedrock")
         self.assertEqual(written["max_workers"], 7)          # untouched
         self.assertEqual(written["_comment"], "keep me")      # preserved
 
@@ -637,6 +658,11 @@ class TestLLMProviderToggle(unittest.TestCase):
             with self.assertRaises(Exception):
                 save_settings({"llm_provider": "not-a-real-provider"}, path)
             self.assertEqual(json.loads(path.read_text()), original)  # unchanged
+
+    def test_stale_config_keys_are_rejected_not_ignored(self):
+        """A removed provider's leftover key should fail loudly."""
+        with self.assertRaises(Exception):
+            Settings(openrouter_model="anthropic/claude-3.5-haiku")
 
 
 class TestSqlSafety(unittest.TestCase):

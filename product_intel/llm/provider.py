@@ -3,13 +3,12 @@ Pluggable LLM provider.
 
 Three backends behind one interface, switchable at runtime:
 
-    ollama      local, offline, nothing leaves the machine (default)
-    openrouter  cloud, one key for most hosted models
-    openai      cloud, or any self-hosted OpenAI-compatible server
-    null        no model at all
+    ollama    local, offline, nothing leaves the machine (default)
+    bedrock   AWS Bedrock, via the standard AWS credential chain
+    null      no model at all
 
-Switch with `product-intel llm use ollama|openrouter` or the toggle in the
-Streamlit console. Because the choice is a runtime setting rather than a code
+Switch with `product-intel llm use ollama|bedrock` or the toggle in the
+web console. Because the choice is a runtime setting rather than a code
 path, the same catalog can be built offline on a workstation and re-built
 against a stronger cloud model without changing anything else.
 
@@ -160,122 +159,239 @@ class OllamaProvider(LLMProvider):
         return (r.json().get("response") or "").strip()
 
 
-class _ChatCompletionsProvider(LLMProvider):
+class BedrockProvider(LLMProvider):
     """
-    Shared implementation for any OpenAI-compatible /chat/completions endpoint.
+    AWS Bedrock via the Converse API.
 
-    OpenAI, OpenRouter, vLLM, LM Studio and TGI all speak this protocol, so the
-    only differences worth subclassing are the base URL, the key, and any
-    provider-specific headers.
+    Converse rather than InvokeModel because it presents one uniform request
+    and response shape across Anthropic, Amazon Nova, Meta and Mistral models.
+    Switching model families becomes a model-ID change with no code change,
+    which is the whole point of having a provider abstraction.
+
+    Credentials come from the standard boto3 chain -- environment variables, a
+    named profile, ~/.aws/credentials, or an EC2/ECS/EKS role. Nothing secret
+    is ever read from or written to settings.json, so the same config file is
+    safe to commit and works unchanged on a developer laptop and in a task role.
     """
 
-    name = "chat-completions"
-    provider_key = "openai"
+    name = "bedrock"
 
     def __init__(self, cfg: Optional[Settings] = None):
         super().__init__(cfg)
-        self._client = httpx.Client(timeout=self.cfg.llm_timeout_seconds)
+        self._client = None
+        self._client_error: Optional[str] = None
 
-    # -- subclass hooks ----------------------------------------------------
+    # -- client ------------------------------------------------------------
 
-    def base_url(self) -> str:
-        return self.cfg.openai_base_url
+    def _get_client(self):
+        """Build the bedrock-runtime client once, converting setup failures into clear errors."""
+        if self._client is not None:
+            return self._client
+        if self._client_error is not None:
+            raise LLMConfigurationError(self._client_error)
 
-    def extra_headers(self) -> Dict[str, str]:
-        return {}
+        try:
+            import boto3
+            from botocore.config import Config as BotoConfig
+        except ImportError as exc:
+            self._client_error = (
+                "boto3 is not installed. Run: pip install boto3   "
+                f"(underlying error: {exc})"
+            )
+            raise LLMConfigurationError(self._client_error) from exc
 
-    # ----------------------------------------------------------------------
+        try:
+            session = (
+                boto3.Session(profile_name=self.cfg.aws_profile)
+                if self.cfg.aws_profile
+                else boto3.Session()
+            )
+            if session.get_credentials() is None:
+                self._client_error = (
+                    "No AWS credentials found. Set "
+                    f"${self.cfg.aws_access_key_id_env} and ${self.cfg.aws_secret_access_key_env} "
+                    "in the .env file at the project root, or configure a profile with "
+                    "`aws configure`."
+                )
+                raise LLMConfigurationError(self._client_error)
+
+            self._client = session.client(
+                "bedrock-runtime",
+                region_name=self.cfg.aws_region,
+                config=BotoConfig(
+                    read_timeout=self.cfg.llm_timeout_seconds,
+                    connect_timeout=15,
+                    # boto3 has its own retry logic; ours sits above it, so keep
+                    # this low to avoid multiplying the two together.
+                    retries={"max_attempts": 2, "mode": "standard"},
+                ),
+            )
+            return self._client
+        except LLMConfigurationError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - botocore raises a wide range
+            self._client_error = f"Could not create a Bedrock client: {exc}"
+            raise LLMConfigurationError(self._client_error) from exc
 
     @property
     def available(self) -> bool:
-        return bool(self.cfg.api_key(self.provider_key))
+        return self.cfg.aws_credentials_present()
+
+    # -- completion --------------------------------------------------------
 
     def _complete(self, prompt: str, json_mode: bool, system: Optional[str]) -> str:
-        key = self.cfg.api_key(self.provider_key)
-        if not key:
-            env_name = self.cfg.api_key_env_for(self.provider_key)
-            raise LLMConfigurationError(
-                f"No API key found. Set {env_name} in your environment or in the .env "
-                f"file at the project root."
-            )
+        client = self._get_client()
 
-        messages = ([{"role": "system", "content": system}] if system else []) + [
-            {"role": "user", "content": prompt}
-        ]
-        payload: Dict[str, Any] = {
-            "model": self.cfg.active_model,
-            "messages": messages,
-            "temperature": self.cfg.llm_temperature,
-        }
+        system_blocks = []
+        if system:
+            system_blocks.append({"text": system})
         if json_mode:
-            payload["response_format"] = {"type": "json_object"}
-
-        headers = {"Authorization": f"Bearer {key}", **self.extra_headers()}
-        r = self._client.post(f"{self.base_url()}/chat/completions", json=payload, headers=headers)
-
-        # Surface the provider's own error text: "insufficient credits" or
-        # "model not found" is far more actionable than a bare 402/404.
-        if r.status_code >= 400:
-            detail = ""
-            try:
-                body = r.json()
-                detail = body.get("error", {}).get("message") or str(body)[:200]
-            except Exception:  # noqa: BLE001
-                detail = r.text[:200]
-            # 401/403/404/402 are configuration problems; 429/5xx are worth a retry.
-            error_cls = (
-                LLMConfigurationError
-                if r.status_code in (400, 401, 402, 403, 404)
-                else LLMUnavailable
+            # Converse has no response_format switch, so JSON is requested in the
+            # system block. The lenient parser downstream handles any preamble a
+            # model adds anyway, so this is a nudge rather than a guarantee.
+            system_blocks.append(
+                {"text": "Respond with a single valid JSON value and nothing else. "
+                         "No prose, no explanation, no markdown code fences."}
             )
-            raise error_cls(f"{self.name} HTTP {r.status_code}: {detail}")
 
-        data = r.json()
-        choices = data.get("choices") or []
-        if not choices:
-            raise LLMUnavailable(f"{self.name} returned no choices: {str(data)[:200]}")
-        return (choices[0].get("message", {}).get("content") or "").strip()
-
-
-class OpenAIProvider(_ChatCompletionsProvider):
-    """OpenAI, or any self-hosted OpenAI-compatible server."""
-
-    name = "openai"
-    provider_key = "openai"
-
-
-class OpenRouterProvider(_ChatCompletionsProvider):
-    """
-    OpenRouter: one API key and one endpoint in front of most hosted models.
-
-    Chosen as the cloud option because it means the toggle switches *provider*,
-    not integration -- swapping between Claude, GPT, Gemini and hosted Llama is
-    a model-name change, with no further code or credentials.
-    """
-
-    name = "openrouter"
-    provider_key = "openrouter"
-
-    def base_url(self) -> str:
-        return self.cfg.openrouter_base_url
-
-    def extra_headers(self) -> Dict[str, str]:
-        # Optional, and used only for attribution on the OpenRouter dashboard.
-        return {
-            "HTTP-Referer": self.cfg.openrouter_site_url,
-            "X-Title": self.cfg.openrouter_app_name,
+        request: Dict[str, Any] = {
+            "modelId": self.cfg.active_model,
+            "messages": [{"role": "user", "content": [{"text": prompt}]}],
+            "inferenceConfig": {
+                "temperature": self.cfg.llm_temperature,
+                "maxTokens": self.cfg.bedrock_max_tokens,
+            },
         }
+        if system_blocks:
+            request["system"] = system_blocks
+
+        try:
+            response = client.converse(**request)
+        except Exception as exc:  # noqa: BLE001 - botocore ClientError hierarchy
+            raise self._translate_error(exc) from exc
+
+        try:
+            blocks = response["output"]["message"]["content"]
+        except (KeyError, TypeError) as exc:
+            raise LLMUnavailable(f"Unexpected Bedrock response shape: {str(response)[:200]}") from exc
+
+        text = "".join(b.get("text", "") for b in blocks).strip()
+        if not text:
+            stop = response.get("stopReason", "unknown")
+            raise LLMUnavailable(f"Bedrock returned no text (stopReason={stop}).")
+        return text
+
+    def _translate_error(self, exc: Exception) -> LLMUnavailable:
+        """
+        Turn a botocore error into something a human can act on.
+
+        Bedrock's failure modes are specific and each has a specific fix, so a
+        bare ClientError string is a wasted opportunity to tell the user what
+        to do next.
+        """
+        code = ""
+        message = str(exc)
+        response = getattr(exc, "response", None)
+        if isinstance(response, dict):
+            error = response.get("Error", {})
+            code = error.get("Code", "") or ""
+            message = error.get("Message", message) or message
+
+        region = self.cfg.aws_region
+        model = self.cfg.active_model
+
+        permanent = {
+            "AccessDeniedException": (
+                f"Access denied for '{model}' in {region}. Enable the model in the Bedrock "
+                f"console under Model access, and confirm the IAM identity has "
+                f"bedrock:InvokeModel."
+            ),
+            "ResourceNotFoundException": (
+                f"Model '{model}' was not found in {region}. Most current models are only "
+                f"reachable through a cross-region inference profile (an ID beginning "
+                f"'us.', 'eu.' or 'apac.'). Run `product-intel llm models` to list what is "
+                f"available in your account."
+            ),
+            "ValidationException": f"Bedrock rejected the request: {message}",
+            "UnrecognizedClientException": "The AWS credentials were rejected. Check the key and secret.",
+            "InvalidSignatureException": (
+                "AWS signature rejected. This usually means a mistyped secret key, or a "
+                "machine clock that is out of sync."
+            ),
+        }
+        if code in permanent:
+            return LLMConfigurationError(f"{code}: {permanent[code]}")
+
+        transient = ("ThrottlingException", "ModelTimeoutException",
+                     "ServiceUnavailableException", "InternalServerException")
+        if code in transient:
+            return LLMUnavailable(f"{code}: {message} (transient -- will retry)")
+
+        return LLMUnavailable(f"Bedrock call failed: {code or type(exc).__name__}: {message}")
+
+    # -- discovery ---------------------------------------------------------
+
+    def list_available_models(self) -> List[Dict[str, str]]:
+        """
+        Ask the account which text models it can actually invoke.
+
+        Far more reliable than a hardcoded list: model availability varies by
+        region and by which models the account has enabled, and IDs change.
+        """
+        try:
+            import boto3
+        except ImportError as exc:
+            raise LLMConfigurationError("boto3 is not installed. Run: pip install boto3") from exc
+
+        session = (
+            boto3.Session(profile_name=self.cfg.aws_profile)
+            if self.cfg.aws_profile
+            else boto3.Session()
+        )
+        control = session.client("bedrock", region_name=self.cfg.aws_region)
+
+        out: List[Dict[str, str]] = []
+
+        # Inference profiles first: for most current models this is the only
+        # invocable ID, so listing foundation models alone would mislead.
+        try:
+            profiles = control.list_inference_profiles().get("inferenceProfileSummaries", [])
+            for p in profiles:
+                out.append({
+                    "id": p.get("inferenceProfileId", ""),
+                    "name": p.get("inferenceProfileName", ""),
+                    "kind": "inference profile",
+                })
+        except Exception as exc:  # noqa: BLE001 - older regions lack this API
+            log.debug("could not list inference profiles: %s", exc)
+
+        try:
+            models = control.list_foundation_models(byOutputModality="TEXT").get("modelSummaries", [])
+            for m in models:
+                if "ON_DEMAND" not in (m.get("inferenceTypesSupported") or []):
+                    continue
+                out.append({
+                    "id": m.get("modelId", ""),
+                    "name": f"{m.get('providerName', '')} {m.get('modelName', '')}".strip(),
+                    "kind": "on-demand",
+                })
+        except Exception as exc:  # noqa: BLE001
+            if not out:
+                raise LLMUnavailable(f"Could not list Bedrock models: {exc}") from exc
+
+        return out
 
 
-#: Models known to work well for schema-directed extraction: strong instruction
-#: following, reliable JSON, and cheap enough to run over a whole catalog.
-OPENROUTER_SUGGESTED_MODELS = [
-    ("anthropic/claude-3.5-haiku", "Fast and cheap, very reliable JSON. Good default."),
-    ("anthropic/claude-sonnet-4", "Highest extraction accuracy; costs more."),
-    ("openai/gpt-4o-mini", "Cheap, solid structured output."),
-    ("google/gemini-2.0-flash-001", "Very fast, very cheap, long context."),
-    ("meta-llama/llama-3.3-70b-instruct", "Open-weights; lowest cost per token."),
-    ("qwen/qwen-2.5-72b-instruct", "Open-weights, strong on technical text."),
+#: Sensible starting points. Real availability depends on region and on which
+#: models the account has enabled, so `llm models` queries AWS directly and
+#: this list is only the fallback when that call is not possible.
+BEDROCK_SUGGESTED_MODELS = [
+    ("us.anthropic.claude-3-5-haiku-20241022-v1:0", "Fast and cheap, very reliable JSON. Good default."),
+    ("us.anthropic.claude-sonnet-4-20250514-v1:0", "Highest extraction accuracy; costs more."),
+    ("us.amazon.nova-lite-v1:0", "Amazon's cheapest capable text model."),
+    ("us.amazon.nova-pro-v1:0", "Stronger Nova tier, still inexpensive."),
+    ("us.meta.llama3-3-70b-instruct-v1:0", "Open-weights, low cost per token."),
+    ("mistral.mistral-large-2407-v1:0", "Strong on technical text."),
 ]
 
 OLLAMA_SUGGESTED_MODELS = [
@@ -288,8 +404,7 @@ OLLAMA_SUGGESTED_MODELS = [
 
 _PROVIDERS = {
     "ollama": OllamaProvider,
-    "openrouter": OpenRouterProvider,
-    "openai": OpenAIProvider,
+    "bedrock": BedrockProvider,
     "null": NullProvider,
 }
 

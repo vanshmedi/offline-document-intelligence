@@ -28,12 +28,12 @@ class Settings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     # -- LLM ---------------------------------------------------------------
-    llm_provider: Literal["ollama", "openrouter", "openai", "null"] = Field(
+    llm_provider: Literal["ollama", "bedrock", "null"] = Field(
         default="ollama",
         description=(
             "Which backend serves the gap-fill and generation calls. "
-            "'ollama' runs fully offline on this machine; 'openrouter' and 'openai' "
-            "are cloud APIs; 'null' runs the pipeline deterministically with no model."
+            "'ollama' runs fully offline on this machine; 'bedrock' calls AWS "
+            "Bedrock; 'null' runs the pipeline deterministically with no model."
         ),
     )
     llm_model: Optional[str] = Field(
@@ -45,29 +45,35 @@ class Settings(BaseModel):
     )
 
     # Per-provider model defaults. A model tag is provider-specific --
-    # 'qwen2.5:14b' means nothing to OpenRouter and 'anthropic/claude-sonnet-4'
-    # means nothing to Ollama -- so each provider carries its own.
+    # 'qwen2.5:14b' means nothing to Bedrock and a Bedrock model ID means
+    # nothing to Ollama -- so each provider carries its own.
     ollama_model: str = "qwen2.5:14b"
-    openrouter_model: str = "anthropic/claude-3.5-haiku"
-    openai_model: str = "gpt-4o-mini"
+    bedrock_model: str = Field(
+        default="us.anthropic.claude-3-5-haiku-20241022-v1:0",
+        description=(
+            "Bedrock model ID or inference profile ID. Most current models are only "
+            "reachable through a cross-region inference profile, which is why this "
+            "carries the 'us.' prefix. Run `product-intel llm models` to list what is "
+            "actually enabled in your account and region."
+        ),
+    )
 
     ollama_base_url: str = "http://localhost:11434"
 
-    openrouter_base_url: str = "https://openrouter.ai/api/v1"
-    openrouter_api_key_env: str = Field(
-        default="OPENROUTER_API_KEY",
-        description="Name of the env var holding the key. The key itself is never written to settings.json.",
+    # AWS credentials follow the standard boto3 resolution chain: environment
+    # variables, then a named profile, then ~/.aws/credentials, then an
+    # instance/task role. Nothing secret is ever stored in settings.json.
+    aws_region: str = "us-east-1"
+    aws_profile: Optional[str] = Field(
+        default=None,
+        description="Named profile from ~/.aws/credentials. Leave null to use the default chain.",
     )
-    openrouter_site_url: str = Field(
-        default="https://github.com/product-intel",
-        description="Sent as HTTP-Referer; OpenRouter uses it for attribution on your dashboard.",
-    )
-    openrouter_app_name: str = "Product Intelligence Engine"
-
-    openai_base_url: str = "https://api.openai.com/v1"
-    openai_api_key_env: str = Field(
-        default="OPENAI_API_KEY",
-        description="Name of the env var holding the key. The key itself is never stored in settings.",
+    aws_access_key_id_env: str = "AWS_ACCESS_KEY_ID"
+    aws_secret_access_key_env: str = "AWS_SECRET_ACCESS_KEY"
+    aws_session_token_env: str = "AWS_SESSION_TOKEN"
+    bedrock_max_tokens: int = Field(
+        default=4096,
+        description="Bedrock requires an explicit output cap; it has no server-side default.",
     )
 
     llm_timeout_seconds: float = 120.0
@@ -175,8 +181,7 @@ class Settings(BaseModel):
             return self.llm_model
         return {
             "ollama": self.ollama_model,
-            "openrouter": self.openrouter_model,
-            "openai": self.openai_model,
+            "bedrock": self.bedrock_model,
         }.get(self.llm_provider, self.ollama_model)
 
     @property
@@ -184,25 +189,45 @@ class Settings(BaseModel):
         """True when no request can leave this machine."""
         return not self.llm_enabled or self.llm_provider in ("ollama", "null")
 
-    def api_key_env_for(self, provider: Optional[str] = None) -> Optional[str]:
-        return {
-            "openrouter": self.openrouter_api_key_env,
-            "openai": self.openai_api_key_env,
-        }.get(provider or self.llm_provider)
+    def aws_credentials_present(self) -> bool:
+        """
+        Whether AWS credentials resolve at all.
 
-    def api_key(self, provider: Optional[str] = None) -> Optional[str]:
-        """Read the key from the environment. Keys are never persisted to settings.json."""
-        env_name = self.api_key_env_for(provider)
-        if not env_name:
-            return None
-        value = os.environ.get(env_name, "").strip()
-        return value or None
+        Checks the environment first, then defers to boto3's own chain so a
+        named profile, ~/.aws/credentials, or an instance role all count. This
+        is why the setup instructions can offer more than one way to auth.
+        """
+        if os.environ.get(self.aws_access_key_id_env) and os.environ.get(
+            self.aws_secret_access_key_env
+        ):
+            return True
+        try:
+            import boto3  # noqa: PLC0415
 
-    def openrouter_api_key(self) -> Optional[str]:
-        return self.api_key("openrouter")
+            session = (
+                boto3.Session(profile_name=self.aws_profile)
+                if self.aws_profile
+                else boto3.Session()
+            )
+            return session.get_credentials() is not None
+        except Exception:  # noqa: BLE001 - missing boto3, bad profile, no config
+            return False
 
-    def openai_api_key(self) -> Optional[str]:
-        return self.api_key("openai")
+    def aws_credential_source(self) -> str:
+        """Human-readable description of where credentials came from."""
+        if os.environ.get(self.aws_access_key_id_env):
+            return f"environment (${self.aws_access_key_id_env})"
+        if self.aws_profile:
+            return f"profile '{self.aws_profile}'"
+        try:
+            import boto3  # noqa: PLC0415
+
+            creds = boto3.Session().get_credentials()
+            if creds is not None:
+                return f"boto3 default chain ({getattr(creds, 'method', 'unknown')})"
+        except Exception:  # noqa: BLE001
+            pass
+        return "not found"
 
 
 def _apply_env_overrides(data: dict) -> dict:

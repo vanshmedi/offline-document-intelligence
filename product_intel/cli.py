@@ -490,7 +490,7 @@ def correct(identifier: str, attribute: str, value: str, reviewer: str, note: st
 
 @cli.group()
 def llm() -> None:
-    """Switch between the offline (Ollama) and cloud (OpenRouter) backends."""
+    """Switch between the offline (Ollama) and cloud (AWS Bedrock) backends."""
 
 
 def _provider_report(cfg) -> None:
@@ -504,7 +504,7 @@ def _provider_report(cfg) -> None:
     elif cfg.is_offline:
         mode, mode_colour, note = "OFFLINE", "green", "   (no request leaves this machine)"
     else:
-        mode, mode_colour, note = "CLOUD", "cyan", "   (requests go to a hosted API)"
+        mode, mode_colour, note = "CLOUD", "cyan", "   (requests go to AWS Bedrock)"
 
     click.echo(click.style(f"  mode      : {mode}", fg=mode_colour, bold=True) + note)
     click.echo(f"  provider  : {cfg.llm_provider}")
@@ -520,12 +520,11 @@ def _provider_report(cfg) -> None:
 
     if cfg.llm_provider == "ollama":
         click.echo(f"  endpoint  : {cfg.ollama_base_url}")
-    elif cfg.llm_provider in ("openrouter", "openai"):
-        env_name = cfg.api_key_env_for()
-        has_key = bool(cfg.api_key())
-        click.echo(f"  key env   : {env_name} "
-                   + click.style("[set]" if has_key else "[MISSING]",
-                                 fg="green" if has_key else "red"))
+    elif cfg.llm_provider == "bedrock":
+        click.echo(f"  region    : {cfg.aws_region}")
+        source = cfg.aws_credential_source()
+        found = source != "not found"
+        click.echo("  creds     : " + click.style(source, fg="green" if found else "red"))
 
     reachable = provider.available
     click.echo("  status    : " + click.style(
@@ -537,9 +536,11 @@ def _provider_report(cfg) -> None:
             click.echo(click.style("  Ollama is not responding. Start it with:", fg="yellow"))
             click.echo("      ollama serve")
             click.echo(f"      ollama pull {cfg.active_model}")
-        elif cfg.llm_provider in ("openrouter", "openai"):
-            click.echo(click.style(f"  No API key in ${cfg.api_key_env_for()}. Add it to .env:", fg="yellow"))
-            click.echo(f"      {cfg.api_key_env_for()}=sk-or-v1-...")
+        else:
+            click.echo(click.style("  No AWS credentials found. Add them to .env:", fg="yellow"))
+            click.echo(f"      {cfg.aws_access_key_id_env}=AKIA...")
+            click.echo(f"      {cfg.aws_secret_access_key_env}=...")
+            click.echo("  ...or run: aws configure")
         click.echo(click.style(
             "  The pipeline still runs -- deterministic extraction only, reduced coverage.",
             dim=True))
@@ -553,18 +554,20 @@ def llm_status() -> None:
 
 
 @llm.command("use")
-@click.argument("provider", type=click.Choice(["ollama", "openrouter", "openai", "off"]))
+@click.argument("provider", type=click.Choice(["ollama", "bedrock", "off"]))
 @click.option("--model", help="Model to use with this provider. Omit for the provider's default.")
+@click.option("--region", help="AWS region (bedrock only).")
+@click.option("--profile", help="AWS named profile (bedrock only). Omit to use the default chain.")
 @click.option("--test/--no-test", default=True, help="Send a probe request after switching.")
-def llm_use(provider: str, model: Optional[str], test: bool) -> None:
+def llm_use(provider: str, model: Optional[str], region: Optional[str],
+            profile: Optional[str], test: bool) -> None:
     """
     Switch the active LLM backend. The choice is persisted to settings.json.
 
     \b
-      ollama      offline, on this machine
-      openrouter  cloud, one key for most hosted models
-      openai      cloud, OpenAI or a compatible server
-      off         no model; deterministic extraction only
+      ollama   offline, on this machine
+      bedrock  AWS Bedrock, via the standard AWS credential chain
+      off      no model; deterministic extraction only
     """
     from product_intel.config import reload_settings, save_settings
 
@@ -575,13 +578,16 @@ def llm_use(provider: str, model: Optional[str], test: bool) -> None:
     else:
         updates["llm_enabled"] = True
         updates["llm_provider"] = provider
+        # Clear any global override so the provider's own default applies.
+        updates["llm_model"] = None
         if model:
             # Store against the provider so switching back and forth remembers both.
             updates[f"{provider}_model"] = model
-            updates["llm_model"] = None
-        else:
-            # Clear any global override so the provider's own default applies.
-            updates["llm_model"] = None
+        if provider == "bedrock":
+            if region:
+                updates["aws_region"] = region
+            if profile:
+                updates["aws_profile"] = profile
 
     try:
         save_settings(updates)
@@ -638,36 +644,104 @@ def llm_test() -> None:
         raise SystemExit(1)
 
     elapsed = _time.time() - started
-    click.echo(click.style("OK", fg="green", bold=True)
-               + f"  round trip {elapsed:.2f}s")
+    click.echo(click.style("OK", fg="green", bold=True) + f"  round trip {elapsed:.2f}s")
     click.echo(f"  response: {json.dumps(result)[:160]}")
 
 
 @llm.command("models")
-def llm_models() -> None:
-    """List models known to work well for schema-directed extraction."""
+@click.option("--live/--no-live", default=True,
+              help="Query AWS for what is actually enabled in your account (bedrock only).")
+def llm_models(live: bool) -> None:
+    """List models for each backend."""
     from product_intel.llm.provider import (
+        BEDROCK_SUGGESTED_MODELS,
         OLLAMA_SUGGESTED_MODELS,
-        OPENROUTER_SUGGESTED_MODELS,
+        BedrockProvider,
+        LLMUnavailable,
     )
 
     click.echo(click.style("Ollama (offline)", bold=True))
     for name, note in OLLAMA_SUGGESTED_MODELS:
         marker = " *" if name == settings.ollama_model else "  "
-        click.echo(f"{marker} {name:<34} {note}")
+        click.echo(f"{marker} {name:<46} {note}")
     click.echo(click.style("\n  pull with: ollama pull <name>", dim=True))
 
     click.echo()
-    click.echo(click.style("OpenRouter (cloud)", bold=True))
-    for name, note in OPENROUTER_SUGGESTED_MODELS:
-        marker = " *" if name == settings.openrouter_model else "  "
-        click.echo(f"{marker} {name:<34} {note}")
-    click.echo(click.style("\n  full list: https://openrouter.ai/models", dim=True))
+    click.echo(click.style(f"AWS Bedrock (cloud, region {settings.aws_region})", bold=True))
+
+    listed = False
+    if live and settings.aws_credentials_present():
+        try:
+            models = BedrockProvider(settings).list_available_models()
+            if models:
+                listed = True
+                click.echo(click.style("  Enabled in your account:", dim=True))
+                for m in models:
+                    marker = " *" if m["id"] == settings.bedrock_model else "  "
+                    click.echo(f"{marker} {m['id']:<46} {m['name']} [{m['kind']}]")
+        except LLMUnavailable as exc:
+            click.echo(click.style(f"  Could not query AWS: {exc}", fg="yellow"))
+        except Exception as exc:  # noqa: BLE001
+            click.echo(click.style(f"  Could not query AWS: {exc}", fg="yellow"))
+
+    if not listed:
+        click.echo(click.style("  Suggested (availability varies by region and account):", dim=True))
+        for name, note in BEDROCK_SUGGESTED_MODELS:
+            marker = " *" if name == settings.bedrock_model else "  "
+            click.echo(f"{marker} {name:<46} {note}")
+        click.echo(click.style(
+            "\n  Most current models need a cross-region inference profile "
+            "(IDs starting 'us.', 'eu.' or 'apac.').", dim=True))
+        click.echo(click.style(
+            "  Enable models at: Bedrock console -> Model access", dim=True))
 
     click.echo()
     click.echo("Select with: " + click.style(
-        "product-intel llm use openrouter --model openai/gpt-4o-mini", bold=True))
+        "product-intel llm use bedrock --model us.amazon.nova-lite-v1:0", bold=True))
     click.echo(click.style("  * = current default for that provider", dim=True))
+
+
+# ---------------------------------------------------------------------------
+# Web console
+# ---------------------------------------------------------------------------
+
+
+@cli.command()
+@click.option("--host", default="127.0.0.1", help="Bind address. Use 0.0.0.0 to expose on the network.")
+@click.option("--port", default=8000, type=int)
+@click.option("--reload", is_flag=True, help="Auto-reload on code changes (development).")
+@click.option("--open-browser/--no-open-browser", default=True)
+def serve(host: str, port: int, reload: bool, open_browser: bool) -> None:
+    """Start the API and the web console."""
+    try:
+        import uvicorn
+    except ImportError:
+        raise click.ClickException(
+            "uvicorn is not installed. Run: pip install 'uvicorn[standard]' fastapi"
+        )
+
+    url = f"http://{'localhost' if host in ('127.0.0.1', '0.0.0.0') else host}:{port}"
+    click.echo(click.style("Product Intelligence console", bold=True))
+    click.echo(f"  console : {url}")
+    click.echo(f"  API docs: {url}/api/docs")
+    click.echo(f"  catalog : {settings.catalog_path}")
+    click.echo(f"  backend : {settings.llm_provider}"
+               + ("" if settings.llm_provider == "null" else f" / {settings.active_model}"))
+    click.echo()
+
+    if open_browser and not reload:
+        import threading
+        import webbrowser
+
+        threading.Timer(1.2, lambda: webbrowser.open(url)).start()
+
+    uvicorn.run(
+        "product_intel.api.app:app",
+        host=host,
+        port=port,
+        reload=reload,
+        log_level=settings.log_level.lower(),
+    )
 
 
 # ---------------------------------------------------------------------------

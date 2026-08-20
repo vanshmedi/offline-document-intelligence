@@ -1,5 +1,5 @@
 {
-  "llm_provider": "ollama",
+  "llm_provider": "bedrock",
   "llm_model": null,
   "ollama_base_url": "http://localhost:11434",
   "llm_enabled": true,
@@ -22,5 +22,6 @@
   "enable_gap_fill_inheritance": true,
   "max_workers": 4,
   "log_level": "INFO",
-  "openrouter_model": "anthropic/claude-3.5-haiku"
+  "aws_region": "us-east-1",
+  "bedrock_model": "us.amazon.nova-lite-v1:0"
 }

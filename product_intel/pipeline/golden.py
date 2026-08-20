@@ -104,10 +104,12 @@ def arbitrate(
     if not usable:
         return None, None
 
-    # A human correction ends the argument.
+    # A human correction ends the argument. Observations are appended in order,
+    # so the LAST human value is the most recent one -- taking the first would
+    # mean a reviewer's second correction silently never took effect.
     human = [av for av in usable if av.evidence and av.evidence.method == ExtractionMethod.HUMAN]
     if human:
-        winner = human[0]
+        winner = human[-1]
         score_attribute(winner, attr, agreeing=1, disagreeing=0)
         return winner, None
 

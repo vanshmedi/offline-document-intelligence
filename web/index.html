@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Product Intelligence</title>
+  <meta name="description" content="Evidence-grounded product intelligence for industrial commerce">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>◆</text></svg>">
+  <link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body>
+  <div id="app" class="app">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <span class="brand-mark">◆</span>
+        <div>
+          <div class="brand-name">Product Intelligence</div>
+          <div class="brand-sub">Industrial commerce engine</div>
+        </div>
+      </div>
+
+      <nav class="nav" id="nav">
+        <a class="nav-item" data-route="/" href="/"><span class="nav-ico">▤</span>Overview</a>
+        <a class="nav-item" data-route="/products" href="/products"><span class="nav-ico">▦</span>Products</a>
+        <a class="nav-item" data-route="/review" href="/review"><span class="nav-ico">⚑</span>Review
+          <span class="nav-badge" id="review-badge" hidden></span></a>
+        <a class="nav-item" data-route="/search" href="/search"><span class="nav-ico">⌕</span>Search</a>
+        <a class="nav-item" data-route="/schema" href="/schema"><span class="nav-ico">☰</span>Schema</a>
+        <a class="nav-item" data-route="/settings" href="/settings"><span class="nav-ico">⚙</span>Settings</a>
+      </nav>
+
+      <div class="sidebar-foot">
+        <div class="backend-chip" id="backend-chip" title="AI backend">
+          <span class="dot" id="backend-dot"></span>
+          <span id="backend-label">checking…</span>
+        </div>
+        <button class="btn btn-sm btn-ghost" id="btn-run" type="button">Run pipeline</button>
+      </div>
+    </aside>
+
+    <main class="main" id="main">
+      <div class="loading"><span class="spinner"></span> Loading…</div>
+    </main>
+  </div>
+
+  <div class="drawer-scrim" id="scrim" hidden></div>
+  <aside class="drawer" id="drawer" hidden aria-label="Evidence">
+    <header class="drawer-head">
+      <div>
+        <div class="drawer-title" id="drawer-title">Evidence</div>
+        <div class="drawer-sub" id="drawer-sub"></div>
+      </div>
+      <button class="btn btn-icon" id="drawer-close" type="button" aria-label="Close">✕</button>
+    </header>
+    <div class="drawer-body" id="drawer-body"></div>
+  </aside>
+
+  <div class="toasts" id="toasts"></div>
+
+  <script type="module" src="/assets/app.js"></script>
+</body>
+</html>

@@ -403,6 +403,12 @@ def apply_correction(
     Recorded as a HUMAN-method observation, which wins every subsequent
     arbitration -- so a correction survives re-ingestion of the source that was
     wrong in the first place.
+
+    Validate-then-mutate, in that order. If the submitted value fails schema
+    normalization the product is left exactly as it was and the rejected
+    AttributeValue is returned for the caller to report. Mutating first and
+    checking afterwards would leave a null in the in-memory record even though
+    the caller went on to reject the request.
     """
     from product_intel.pipeline.normalizer import normalize_value
 
@@ -414,6 +420,9 @@ def apply_correction(
         av = normalize_value(new_value, attr)
     else:
         av = AttributeValue(code=code, value=new_value, raw_value=str(new_value))
+
+    if av.value is None:
+        return av  # rejected: nothing is written
 
     av.evidence = Evidence(
         source_id=f"human:{reviewer}",
